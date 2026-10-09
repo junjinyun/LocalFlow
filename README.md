@@ -51,10 +51,40 @@ LocalFlow는 개발자가 사용 중인 AI 도구의 대화·에이전트 한도
 LocalFlow/
 ├─ localflow-frontend/       # React 웹 클라이언트
 ├─ localflow-backend/        # Spring Boot API·에이전트 서버
-├─ ollama-fastapi-backend/   # 초기 Ollama 연동 실험 코드
+├─ ollama-fastapi-backend/   # 초기 Ollama 연동 실험 코드(로컬 개발용)
 ├─ .github/                  # 이슈·PR 템플릿
 └─ .portfolio/               # AI 작업 컨텍스트에서 제외된 포트폴리오 기록
 ```
+
+## 브랜치 운영
+
+```text
+feature/* 또는 fix/*
+→ dev PR 및 기능 통합
+→ dev에서 빌드·테스트
+→ dev → main PR
+→ main 배포
+```
+
+- `dev`: 일상적인 개발과 기능 통합의 기준 브랜치
+- `main`: 검증을 마친 배포 가능 코드만 유지하는 브랜치
+- `main`에는 직접 푸시하지 않고 반드시 `dev → main` PR을 사용합니다.
+- Railway 운영 환경은 `main`, 필요하면 별도의 스테이징 환경은 `dev`를 바라보도록 설정합니다.
+
+## 배포 구성
+
+이 저장소는 서로 분리된 프론트엔드·백엔드·로컬 실험 코드를 한곳에서 관리하는 모노레포입니다. 수업 프로젝트와 MVP에서는 변경 이력과 이슈를 한곳에서 관리할 수 있어 현재 구성을 유지합니다.
+
+Railway에서는 하나의 프로젝트 안에 다음 두 서비스를 만들고 동일한 저장소의 서로 다른 Root Directory를 지정합니다.
+
+| Railway 서비스 | Root Directory | 용도 |
+|---|---|---|
+| Frontend | `/localflow-frontend` | React 정적 웹 서비스 |
+| Backend | `/localflow-backend` | Spring Boot API 및 에이전트 실행 |
+
+`ollama-fastapi-backend`는 사용자 PC의 Ollama와 통신하는 초기 실험 코드이므로 Railway 배포 대상에서 제외합니다. Railway에 배포한 서버는 사용자 PC의 `localhost` Ollama에 직접 접근할 수 없으므로, 외부 체험 환경에서는 OpenAI 또는 Vertex AI를 사용합니다.
+
+업로드 파일과 H2 데이터베이스를 재배포 후에도 유지하려면 Backend에 Railway Volume을 연결하고 `LOCALFLOW_DB_URL`, `LOCALFLOW_WORKSPACE_ROOT`를 해당 마운트 경로 아래로 지정해야 합니다. 실제 배포 전에는 프론트엔드 정적 서버, Railway의 `PORT`, 공개 프론트 도메인 CORS 및 `VITE_API_BASE_URL`도 함께 설정합니다.
 
 ## 빠른 시작
 
