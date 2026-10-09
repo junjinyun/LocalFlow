@@ -134,7 +134,7 @@ export default function App() {
               {tab === 'chat' && <ChatView project={selected} providers={providers} notify={notify} />}
               {tab === 'memory' && <MemoryView project={selected} notify={notify} />}
               {tab === 'runs' && <RunsView project={selected} notify={notify} />}
-              {tab === 'settings' && <SettingsView project={selected} providers={providers} onUpdated={updateProject} onRemoved={removeProject} notify={notify} />}
+              {tab === 'settings' && <SettingsView project={selected} providers={providers} onProvidersRefreshed={setProviders} onUpdated={updateProject} onRemoved={removeProject} notify={notify} />}
             </div>
           </>
         )}

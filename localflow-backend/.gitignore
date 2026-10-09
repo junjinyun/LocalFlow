@@ -6,5 +6,5 @@ out/
 .env
 .env.*
 !.env.example
-data/
-workspace/
+/data/
+/workspace/

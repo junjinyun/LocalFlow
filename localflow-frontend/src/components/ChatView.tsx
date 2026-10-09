@@ -34,10 +34,17 @@ export default function ChatView({ project, providers, notify }: Props) {
   const selectableModels = selectedProvider?.models?.length
     ? selectedProvider.models
     : selectedProvider?.model ? [selectedProvider.model] : []
-  const modelSelectable = provider === 'OPENAI' || provider === 'VERTEX_AI'
+  const modelSelectable = provider === 'OPENAI' || provider === 'VERTEX_AI' || provider === 'OLLAMA'
   const privacyBlocked = privacyMode === 'LOCAL_ONLY' && provider !== '' && provider !== 'OLLAMA'
   const modelValid = !modelSelectable || Boolean(model && selectableModels.includes(model))
-  const canExecute = Boolean(selectedProvider?.configured) && !privacyBlocked && modelValid
+  const canExecute = Boolean(selectedProvider?.available) && !privacyBlocked && modelValid
+
+  const providerUnavailableLabel = (item: Provider) => {
+    if (item.available) return ''
+    if (item.type === 'OLLAMA' && item.configured && !item.reachable) return ' · 서버 연결 실패'
+    if (item.type === 'OLLAMA' && item.reachable && !item.modelInstalled) return ' · 모델 없음'
+    return ' · 환경 설정 필요'
+  }
 
   const load = async () => {
     setLoading(true)
@@ -75,8 +82,8 @@ export default function ChatView({ project, providers, notify }: Props) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages.length, activeProgress.length])
   useEffect(() => {
     if (!provider && generationProviders.length) {
-      setProvider((generationProviders.find(item => item.type === 'OLLAMA' && item.configured)
-        ?? generationProviders.find(item => item.configured)
+      setProvider((generationProviders.find(item => item.type === 'OLLAMA' && item.available)
+        ?? generationProviders.find(item => item.available)
         ?? generationProviders[0]).type)
     }
   }, [providers])
@@ -85,7 +92,9 @@ export default function ChatView({ project, providers, notify }: Props) {
       setModel('')
       return
     }
-    setModel(selectedProvider.model ?? selectableModels[0] ?? '')
+    setModel(selectedProvider.model && selectableModels.includes(selectedProvider.model)
+      ? selectedProvider.model
+      : selectableModels[0] ?? '')
   }, [provider, selectedProvider?.model, selectedProvider?.models, modelSelectable])
 
   const submit = async (createRun: boolean) => {
@@ -185,7 +194,7 @@ export default function ChatView({ project, providers, notify }: Props) {
               <select value={type} onChange={event => setType(event.target.value as ChatMessage['type'])}><option value="PROMPT">프롬프트</option><option value="HANDOFF">인수인계</option><option value="NOTE">메모</option></select>
               <span>Ctrl + Enter로 기록</span>
             </div>
-            <div className="inline-actions"><button className="secondary-button" disabled={sending || !content.trim()} onClick={() => submit(false)}><Send size={15} />기록</button><button className="primary-button" disabled={sending || !content.trim() || !canExecute} onClick={() => submit(true)} title={!selectedProvider?.configured ? '환경 변수 설정이 필요한 제공자입니다.' : privacyBlocked ? '로컬 전용에서는 Ollama만 사용할 수 있습니다.' : !modelValid ? '사용할 모델을 선택해 주세요.' : 'AI 작업 실행'}><CornerDownLeft size={15} />AI 실행</button></div>
+            <div className="inline-actions"><button className="secondary-button" disabled={sending || !content.trim()} onClick={() => submit(false)}><Send size={15} />기록</button><button className="primary-button" disabled={sending || !content.trim() || !canExecute} onClick={() => submit(true)} title={!selectedProvider?.available ? selectedProvider?.statusMessage || '사용 가능한 AI 제공자가 없습니다.' : privacyBlocked ? '로컬 전용에서는 Ollama만 사용할 수 있습니다.' : !modelValid ? '사용할 모델을 선택해 주세요.' : 'AI 작업 실행'}><CornerDownLeft size={15} />AI 실행</button></div>
           </div>
         </div>
       </div>
@@ -193,9 +202,10 @@ export default function ChatView({ project, providers, notify }: Props) {
       <aside className="chat-side panel">
         <div className="side-note"><Info size={17} /><div><strong>AI 실행이 연결되어 있습니다.</strong><p>선택한 제공자로 계획을 만들고, 프로젝트 권한에 따라 승인 후 업로드 사본에 적용합니다.</p></div></div>
         {privacyBlocked && <div className="side-note warning"><Info size={17} /><div><strong>로컬 전용 설정</strong><p>외부 AI를 실행하려면 설정 탭에서 개인정보 모드를 외부 AI 전송 허용으로 변경해야 합니다.</p></div></div>}
+        {selectedProvider && !selectedProvider.available && <div className="side-note warning"><Info size={17} /><div><strong>{selectedProvider.displayName}을 사용할 수 없습니다.</strong><p>{selectedProvider.statusMessage}</p></div></div>}
         <div className="form-stack compact-form">
           <label>실행 모드<select value={executionMode} onChange={event => setExecutionMode(event.target.value as ExecutionMode)}><option value="CONFIRM_EVERY_STEP">매 단계 확인</option><option value="BALANCED">균형 모드</option><option value="AUTONOMOUS">자율 실행</option></select></label>
-          <label>생성 AI<select value={provider} onChange={event => setProvider(event.target.value as ProviderType)}>{generationProviders.map(item => <option key={item.type} value={item.type} disabled={!item.configured}>{item.displayName}{item.configured ? '' : ' · 환경 설정 필요'}</option>)}</select></label>
+          <label>생성 AI<select value={provider} onChange={event => setProvider(event.target.value as ProviderType)}>{generationProviders.map(item => <option key={item.type} value={item.type} disabled={!item.available}>{item.displayName}{providerUnavailableLabel(item)}</option>)}</select></label>
           {modelSelectable && <label>사용 모델<select value={model} onChange={event => setModel(event.target.value)} disabled={!selectableModels.length}>{selectableModels.map(item => <option key={item} value={item}>{item}{item === selectedProvider?.model ? ' · 기본' : ''}</option>)}</select></label>}
         </div>
         <div className="context-guide"><h3>기록 유형</h3><dl><dt>프롬프트</dt><dd>수행하려는 작업</dd><dt>인수인계</dt><dd>이전 AI의 진행 내용</dd><dt>메모</dt><dd>일회성 참고 사항</dd></dl></div>

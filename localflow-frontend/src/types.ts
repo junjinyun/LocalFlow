@@ -66,7 +66,8 @@ export type ProjectMemory = {
 export type ProviderType = 'JEV' | 'OPENAI' | 'VERTEX_AI' | 'OLLAMA'
 export type Provider = {
   type: ProviderType; role: 'DECISION' | 'GENERATION'; displayName: string; credentialType: string
-  implemented: boolean; configured: boolean; model: string | null; models: string[]
+  implemented: boolean; configured: boolean; reachable: boolean | null; modelInstalled: boolean | null
+  available: boolean; statusMessage: string; model: string | null; models: string[]
 }
 
 export type FileOperation = {

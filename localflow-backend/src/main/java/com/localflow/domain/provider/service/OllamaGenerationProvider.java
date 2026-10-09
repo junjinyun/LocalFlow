@@ -8,6 +8,7 @@ import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.AiProviderType;
 import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GenerationResult;
+import com.localflow.domain.provider.domain.OllamaStatus;
 import com.localflow.domain.provider.exception.ProviderCallException;
 import com.localflow.domain.provider.port.GenerationProvider;
 import java.util.Map;
@@ -18,22 +19,31 @@ public class OllamaGenerationProvider implements GenerationProvider {
     private final AiProviderProperties.Ollama properties;
     private final ProviderHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final OllamaStatusService statusService;
 
     public OllamaGenerationProvider(AiProviderProperties properties,
                                     ProviderHttpClient httpClient,
-                                    ObjectMapper objectMapper) {
+                                    ObjectMapper objectMapper,
+                                    OllamaStatusService statusService) {
         this.properties = properties.ollama();
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
+        this.statusService = statusService;
     }
 
     @Override public AiProviderType providerType() { return AiProviderType.OLLAMA; }
-    @Override public boolean available() { return properties != null && properties.configured(); }
+    @Override public boolean available() { return status(false).available(); }
     @Override public String model() { return properties == null ? null : properties.model(); }
+    @Override public java.util.List<String> models() { return status(false).models(); }
+
+    public OllamaStatus status(boolean refresh) {
+        return statusService.status(refresh);
+    }
 
     @Override
     public GenerationResult generate(GenerationRequest request) {
-        if (!available()) throw new ProviderCallException(providerType(), "OLLAMA_BASE_URL 또는 OLLAMA_MODEL이 없습니다.");
+        OllamaStatus status = status(false);
+        if (!status.available()) throw new ProviderCallException(providerType(), status.message());
         ObjectNode body = objectMapper.createObjectNode();
         String model = request.model() == null || request.model().isBlank() ? properties.model() : request.model();
         body.put("model", model);

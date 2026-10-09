@@ -11,6 +11,10 @@ public record ProviderResponse(
         String credentialType,
         boolean implemented,
         boolean configured,
+        Boolean reachable,
+        Boolean modelInstalled,
+        boolean available,
+        String statusMessage,
         String model,
         List<String> models
 ) {
