@@ -3,8 +3,10 @@ package com.localflow.domain.agent.controller;
 import com.localflow.domain.agent.dto.request.AgentRunCreateRequest;
 import com.localflow.domain.agent.dto.request.AgentRunExecuteRequest;
 import com.localflow.domain.agent.dto.response.AgentRunResponse;
+import com.localflow.domain.agent.dto.response.AgentRunProgressResponse;
 import com.localflow.domain.agent.dto.response.AgentRunSummaryResponse;
 import com.localflow.domain.agent.service.AgentExecutionService;
+import com.localflow.domain.agent.service.AgentRunProgressService;
 import com.localflow.domain.agent.service.AgentRunService;
 import com.localflow.global.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,11 +28,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentRunController {
     private final AgentRunService agentRunService;
     private final AgentExecutionService agentExecutionService;
+    private final AgentRunProgressService progressService;
 
     public AgentRunController(AgentRunService agentRunService,
-                              AgentExecutionService agentExecutionService) {
+                              AgentExecutionService agentExecutionService,
+                              AgentRunProgressService progressService) {
         this.agentRunService = agentRunService;
         this.agentExecutionService = agentExecutionService;
+        this.progressService = progressService;
     }
 
     @Operation(summary = "에이전트 실행 또는 승인 후 파일 작업 적용")
@@ -66,6 +71,13 @@ public class AgentRunController {
     public ApiResponse<AgentRunResponse> findById(@PathVariable String projectId,
                                                  @PathVariable String runId) {
         return ApiResponse.success(agentExecutionService.findWithSnapshot(projectId, runId));
+    }
+
+    @Operation(summary = "에이전트 실행 진행 이벤트 조회")
+    @GetMapping("/{runId}/progress")
+    public ApiResponse<List<AgentRunProgressResponse>> findProgress(@PathVariable String projectId,
+                                                                   @PathVariable String runId) {
+        return ApiResponse.success(progressService.findAll(projectId, runId));
     }
 
     @Operation(summary = "대기 중인 에이전트 실행 취소")

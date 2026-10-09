@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bot, CornerDownLeft, Info, LoaderCircle, MessageSquare, Send, Trash2, UserRound } from 'lucide-react'
 import { api } from '../api'
-import type { ChatMessage, ExecutionMode, PrivacyMode, Project, Provider, ProviderType } from '../types'
+import type { AgentRunProgress, ChatMessage, ExecutionMode, PrivacyMode, Project, Provider, ProviderType } from '../types'
+import AgentProgressTimeline from './AgentProgressTimeline'
 import MarkdownContent from './MarkdownContent'
 
 type Props = {
@@ -24,7 +25,10 @@ export default function ChatView({ project, providers, notify }: Props) {
   const [model, setModel] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [activeProgress, setActiveProgress] = useState<AgentRunProgress[]>([])
+  const [activeRunStatus, setActiveRunStatus] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const progressTimerRef = useRef<number | null>(null)
   const generationProviders = providers.filter(item => item.role === 'GENERATION')
   const selectedProvider = generationProviders.find(item => item.type === provider)
   const selectableModels = selectedProvider?.models?.length
@@ -49,8 +53,26 @@ export default function ChatView({ project, providers, notify }: Props) {
     }
   }
 
-  useEffect(() => { load() }, [project.id])
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages.length])
+  const stopProgressPolling = () => {
+    if (progressTimerRef.current != null) window.clearInterval(progressTimerRef.current)
+    progressTimerRef.current = null
+  }
+
+  const refreshProgress = async (runId: string) => {
+    try {
+      const events = await api.runs.progress(project.id, runId)
+      setActiveProgress(current => events.length > 0 ? events : current)
+    }
+    catch { /* 실행 요청이 진행 중일 때의 일시적인 조회 실패는 다음 폴링에서 복구한다. */ }
+  }
+
+  useEffect(() => {
+    setActiveProgress([])
+    setActiveRunStatus(null)
+    load()
+    return stopProgressPolling
+  }, [project.id])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages.length, activeProgress.length])
   useEffect(() => {
     if (!provider && generationProviders.length) {
       setProvider((generationProviders.find(item => item.type === 'OLLAMA' && item.configured)
@@ -69,6 +91,15 @@ export default function ChatView({ project, providers, notify }: Props) {
   const submit = async (createRun: boolean) => {
     if (!content.trim()) return
     setSending(true)
+    if (createRun) {
+      setActiveRunStatus('PREPARING')
+      setActiveProgress([{
+        id: -Date.now(),
+        stage: 'PREPARING',
+        message: '요청을 등록하고 AI 실행을 준비하는 중입니다.',
+        createdAt: new Date().toISOString(),
+      }])
+    }
     try {
       const prompt = content.trim()
       const message = await api.chat.create(project.id, type, prompt)
@@ -81,9 +112,17 @@ export default function ChatView({ project, providers, notify }: Props) {
           provider || null,
           modelSelectable ? model : null,
         )
-        const run = await api.runs.execute(project.id, draft.runId)
+        await refreshProgress(draft.runId)
+        const execution = api.runs.execute(project.id, draft.runId)
+        progressTimerRef.current = window.setInterval(() => refreshProgress(draft.runId), 700)
+        const run = await execution
+        stopProgressPolling()
+        await refreshProgress(draft.runId)
+        setActiveRunStatus(run.status)
         if (run.status === 'COMPLETED') {
           await load()
+          setActiveProgress([])
+          setActiveRunStatus(null)
           notify('AI 작업을 완료했습니다.')
         }
         else if (run.status === 'WAITING_APPROVAL') notify('계획을 만들었습니다. 실행 기록에서 승인해 주세요.')
@@ -94,8 +133,10 @@ export default function ChatView({ project, providers, notify }: Props) {
       }
       setContent('')
     } catch (error) {
+      setActiveRunStatus('FAILED')
       notify(error instanceof Error ? error.message : '요청을 저장하지 못했습니다.', 'error')
     } finally {
+      stopProgressPolling()
       setSending(false)
     }
   }
@@ -126,6 +167,13 @@ export default function ChatView({ project, providers, notify }: Props) {
               <button className="icon-button subtle danger" onClick={() => remove(message.id)}><Trash2 size={14} /></button>
             </article>
           ))}
+          {activeProgress.length > 0 && <article className="message-card agent-activity-card">
+            <span className="message-avatar"><Bot size={16} /></span>
+            <div>
+              <header><strong>AI 에이전트</strong><span className={`agent-activity-status ${activeRunStatus?.toLowerCase() ?? ''}`}>{sending ? '작업 중' : activeRunStatus === 'WAITING_APPROVAL' ? '승인 대기' : activeRunStatus === 'FAILED' ? '실패' : '진행 기록'}</span></header>
+              <AgentProgressTimeline events={activeProgress} active={sending} />
+            </div>
+          </article>}
           <div ref={bottomRef} />
         </div>
         <div className="composer">

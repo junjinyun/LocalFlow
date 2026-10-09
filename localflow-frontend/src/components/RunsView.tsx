@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw } from 'lucide-react'
 import { api } from '../api'
-import type { AgentDecision, AgentFileChangeSnapshot, AgentPlan, AgentRun, AgentRunSummary, Project, TaskDecomposition } from '../types'
+import type { AgentDecision, AgentFileChangeSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, Project, TaskDecomposition } from '../types'
+import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
 
@@ -11,6 +12,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
   const [workingId, setWorkingId] = useState<string | null>(null)
   const [selectedRun, setSelectedRun] = useState<AgentRun | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [progress, setProgress] = useState<AgentRunProgress[]>([])
 
   const load = async () => {
     setLoading(true)
@@ -21,6 +23,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
 
   useEffect(() => {
     setSelectedRun(null)
+    setProgress([])
     load()
   }, [project.id])
 
@@ -41,15 +44,25 @@ export default function RunsView({ project, notify }: { project: Project; notify
 
   const execute = async (runId: string, approved: boolean) => {
     setWorkingId(runId)
+    const refreshProgress = async () => {
+      try { setProgress(await api.runs.progress(project.id, runId)) }
+      catch { /* 실행 중 다음 조회에서 복구한다. */ }
+    }
+    await refreshProgress()
+    const timer = window.setInterval(refreshProgress, 700)
     try {
       const updated = await api.runs.execute(project.id, runId, approved)
+      await refreshProgress()
       storeRun(updated)
       if (updated.status === 'COMPLETED') notify('AI 작업을 완료했습니다.')
       else if (updated.status === 'WAITING_APPROVAL') notify('파일 작업 전 승인이 필요합니다.')
       else if (updated.status === 'FAILED') notify(updated.errorMessage || 'AI 실행에 실패했습니다.', 'error')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'AI 실행에 실패했습니다.', 'error')
-    } finally { setWorkingId(null) }
+    } finally {
+      window.clearInterval(timer)
+      setWorkingId(null)
+    }
   }
 
   const refreshOne = async (runId: string) => {
@@ -112,9 +125,13 @@ export default function RunsView({ project, notify }: { project: Project; notify
   const openDetail = async (run: AgentRunSummary) => {
     setDetailLoading(true)
     try {
-      const detail = await api.runs.get(project.id, run.runId)
+      const [detail, events] = await Promise.all([
+        api.runs.get(project.id, run.runId),
+        api.runs.progress(project.id, run.runId),
+      ])
       storeRun(detail)
       setSelectedRun(detail)
+      setProgress(events)
     } catch (error) {
       notify(error instanceof Error ? error.message : '실행 상세 정보를 불러오지 못했습니다.', 'error')
     } finally {
@@ -155,6 +172,11 @@ export default function RunsView({ project, notify }: { project: Project; notify
             <h3>{selectedRun.prompt}</h3>
             <p className={selectedRun.errorMessage ? 'run-error' : ''}>{plan?.summary || selectedRun.resultMessage || selectedRun.notice}</p>
           </div>
+
+          {progress.length > 0 && <section className="run-detail-section">
+            <h3>에이전트 진행 과정 <span>{progress.length}</span></h3>
+            <AgentProgressTimeline events={progress} active={workingId === selectedRun.runId} />
+          </section>}
 
           <section className="run-detail-section">
             <h3>작업 분해 {decomposition && <span>{decomposition.tasks.length}</span>}</h3>

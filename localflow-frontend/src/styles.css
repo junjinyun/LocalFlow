@@ -183,6 +183,21 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .message-card .markdown-content { margin-top: 8px; }
 .message-card > button { position: absolute; top: 10px; right: 0; opacity: 0; }
 .message-card:hover > button { opacity: 1; }
+.agent-activity-card { padding-right: 0; background: linear-gradient(90deg, #f8fbf6 0, transparent 72%); }
+.agent-activity-card header { min-height: 22px; }
+.agent-activity-status { padding: 3px 7px; color: #557050; background: #e5efe2; border-radius: 99px; font-size: 10px; font-weight: 700; }
+.agent-activity-status.failed { color: #9b4b45; background: #f8e8e5; }
+.agent-activity-status.waiting_approval { color: #8c6d2e; background: #fff2d7; }
+.agent-progress-list { position: relative; margin: 12px 0 0; padding: 0; list-style: none; }
+.agent-progress-list::before { content: ''; position: absolute; top: 10px; bottom: 12px; left: 8px; width: 1px; background: #dce5d9; }
+.agent-progress-list li { position: relative; display: grid; grid-template-columns: 23px minmax(0, 1fr); gap: 7px; padding: 0 0 12px; color: #697168; }
+.agent-progress-list li:last-child { padding-bottom: 0; }
+.agent-progress-marker { position: relative; z-index: 1; display: grid; place-items: center; width: 17px; height: 17px; color: #789371; background: #f8fbf6; border-radius: 50%; }
+.agent-progress-list li.current { color: #3f563b; }
+.agent-progress-list li.current .agent-progress-marker { color: #587b51; }
+.agent-progress-list li.failed, .agent-progress-list li.failed .agent-progress-marker { color: #a04f48; }
+.agent-progress-list p { margin: 0; font-size: 12px; line-height: 1.55; }
+.agent-progress-list time { display: block; margin-top: 2px; color: #9ba199; font-size: 9px; }
 .markdown-content { color: #383e38; font-size: 13px; line-height: 1.72; overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
 .markdown-content > :last-child { margin-bottom: 0; }

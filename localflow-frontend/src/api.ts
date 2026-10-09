@@ -1,5 +1,5 @@
 import type {
-  AgentRun, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileContent, FileSyncResult,
+  AgentRun, AgentRunProgress, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileContent, FileSyncResult,
   MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, Provider, ProviderType,
 } from './types'
 
@@ -123,6 +123,8 @@ export const api = {
     list: (projectId: string) => request<AgentRunSummary[]>(`/api/projects/${projectId}/agent-runs`),
     get: (projectId: string, runId: string) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}`),
+    progress: (projectId: string, runId: string) =>
+      request<AgentRunProgress[]>(`/api/projects/${projectId}/agent-runs/${runId}/progress`),
     create: (projectId: string, prompt: string, executionMode: ExecutionMode, provider: ProviderType | null,
       model: string | null) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs`, {
