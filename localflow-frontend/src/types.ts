@@ -116,6 +116,18 @@ export type AgentRun = {
   createdAt: string; updatedAt: string; completedAt: string | null
 }
 
+export type AgentProgressStage =
+  | 'PREPARING' | 'DECOMPOSING' | 'DECOMPOSED' | 'DECIDING'
+  | 'SELECTING_CONTEXT' | 'PLANNING' | 'VALIDATING'
+  | 'WAITING_APPROVAL' | 'APPLYING' | 'COMPLETED' | 'FAILED'
+
+export type AgentRunProgress = {
+  id: number
+  stage: AgentProgressStage
+  message: string
+  createdAt: string
+}
+
 export type AgentRunSummary = {
   runId: string; projectId: string; prompt: string; executionMode: ExecutionMode
   preferredGenerationProvider: ProviderType | null; preferredModel: string | null
