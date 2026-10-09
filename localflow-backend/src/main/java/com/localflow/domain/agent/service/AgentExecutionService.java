@@ -101,28 +101,26 @@ public class AgentExecutionService {
         providers.forEach(provider -> this.providers.put(provider.providerType(), provider));
     }
 
-    @Transactional
-    public AgentRunResponse execute(String projectId, String runId, boolean approved) {
+    public void processQueued(String projectId, String runId, boolean approved, boolean approvalResume) {
         AgentRun run = runService.requireRun(projectId, runId);
-        if (run.getStatus() != AgentRunStatus.DRAFT && run.getStatus() != AgentRunStatus.WAITING_APPROVAL) {
-            throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
-        }
+        if (run.getStatus() != AgentRunStatus.PENDING) return;
         try {
             progressService.append(projectId, runId, AgentProgressStage.PREPARING,
                     "요청을 확인하고 실행 환경을 준비하는 중입니다.");
-            if (run.getStatus() == AgentRunStatus.WAITING_APPROVAL && run.getPlanJson() != null) {
-                if (!approved) return AgentRunResponse.from(run);
+            if (approvalResume && run.getPlanJson() != null) {
                 AgentPlan storedPlan = planParser.parse(run.getPlanJson());
                 progressService.append(projectId, runId, AgentProgressStage.APPLYING,
                         "승인된 파일 변경을 업로드된 프로젝트에 적용하는 중입니다.");
                 run.startRunning(snapshotJson(projectId, storedPlan));
+                runRepository.saveAndFlush(run);
                 apply(projectId, storedPlan);
                 run.complete(run.getDecisionJson(), run.getPlanJson(), storedPlan.response(),
                         run.getModel(), run.getInputTokens(), run.getOutputTokens());
+                runRepository.saveAndFlush(run);
                 addSystemMessage(run, storedPlan.response());
                 progressService.append(projectId, runId, AgentProgressStage.COMPLETED,
                         "파일 변경 적용과 결과 정리를 완료했습니다.");
-                return AgentRunResponse.from(runRepository.save(run));
+                return;
             }
 
             ProjectSettings settings = requireSettings(projectId);
@@ -135,6 +133,7 @@ public class AgentExecutionService {
             String selectedModel = selectModel(provider, requestedModel);
             ensurePrivacy(settings, provider, selectedModel);
             run.startDeciding();
+            runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.DECOMPOSING,
                     "선택한 AI가 요청을 실행 가능한 작업 단위로 분해하는 중입니다.");
             DecompositionOutcome decomposition = decompose(run, files, provider, selectedModel);
@@ -147,6 +146,7 @@ public class AgentExecutionService {
             run.recordDecomposition(decompositionJson, provider.providerType(),
                     decompositionGeneration == null ? selectedModel : decompositionGeneration.model(),
                     decompositionInputTokens, decompositionOutputTokens);
+            runRepository.saveAndFlush(run);
             if (decomposition.fallbackReason() != null) {
                 progressService.append(projectId, runId, AgentProgressStage.DECOMPOSED,
                         "AI 구조화 응답을 해석하지 못해 로컬 규칙으로 요청을 "
@@ -172,7 +172,8 @@ public class AgentExecutionService {
                         decompositionInputTokens, decompositionOutputTokens);
                 progressService.append(projectId, runId, AgentProgressStage.WAITING_APPROVAL,
                         "관련 파일 내용을 AI에 전달하기 전에 사용자 승인을 기다리고 있습니다.");
-                return AgentRunResponse.from(runRepository.save(run));
+                runRepository.saveAndFlush(run);
+                return;
             }
 
             boolean includeContents = settings.getReadPolicy() != PermissionPolicy.DENY;
@@ -180,6 +181,7 @@ public class AgentExecutionService {
                     "태그와 프로젝트 인덱스를 기준으로 관련 파일을 찾는 중입니다.");
             String context = contextService.build(run.getProject(), run.getPrompt(), decision, includeContents);
             run.startPlanning(provider.providerType());
+            runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
                     "선택한 AI가 코드와 파일 변경 계획을 생성하는 중입니다.");
             appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
@@ -199,6 +201,8 @@ public class AgentExecutionService {
                         "파일 변경 계획의 구조화 응답을 재시도하여 정상 형식으로 복구했습니다.");
             }
             String planJson = planParser.toJson(plan);
+            run.startValidating();
+            runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.VALIDATING,
                     "생성된 결과를 검증하고 파일 변경 전후 차이를 계산하는 중입니다.");
             validatePolicies(settings, plan);
@@ -213,24 +217,26 @@ public class AgentExecutionService {
                         inputTokens, outputTokens);
                 progressService.append(projectId, runId, AgentProgressStage.WAITING_APPROVAL,
                         "변경 계획이 준비되어 사용자 승인을 기다리고 있습니다.");
-                return AgentRunResponse.from(runRepository.save(run));
+                runRepository.saveAndFlush(run);
+                return;
             }
 
             progressService.append(projectId, runId, AgentProgressStage.APPLYING,
                     "검증된 파일 변경을 업로드된 프로젝트에 적용하는 중입니다.");
             run.startRunning(changesJson);
+            runRepository.saveAndFlush(run);
             apply(projectId, plan);
             run.complete(decisionJson, planJson, plan.response(), generation.model(),
                     inputTokens, outputTokens);
+            runRepository.saveAndFlush(run);
             addSystemMessage(run, plan.response());
             progressService.append(projectId, runId, AgentProgressStage.COMPLETED,
                     "AI 작업과 결과 정리를 모두 완료했습니다.");
-            return AgentRunResponse.from(runRepository.save(run));
         } catch (Exception exception) {
             run.fail(safeMessage(exception));
+            runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.FAILED,
                     "작업을 완료하지 못했습니다: " + safeMessage(exception));
-            return AgentRunResponse.from(runRepository.save(run));
         }
     }
 

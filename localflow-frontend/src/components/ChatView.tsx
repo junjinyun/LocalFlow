@@ -122,9 +122,12 @@ export default function ChatView({ project, providers, notify }: Props) {
           modelSelectable ? model : null,
         )
         await refreshProgress(draft.runId)
-        const execution = api.runs.execute(project.id, draft.runId)
         progressTimerRef.current = window.setInterval(() => refreshProgress(draft.runId), 700)
-        const run = await execution
+        const queued = await api.runs.execute(project.id, draft.runId)
+        setActiveRunStatus(queued.status)
+        const run = await api.runs.waitForCompletion(project.id, draft.runId, update => {
+          setActiveRunStatus(update.status)
+        })
         stopProgressPolling()
         await refreshProgress(draft.runId)
         setActiveRunStatus(run.status)

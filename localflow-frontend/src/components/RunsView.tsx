@@ -51,7 +51,9 @@ export default function RunsView({ project, notify }: { project: Project; notify
     await refreshProgress()
     const timer = window.setInterval(refreshProgress, 700)
     try {
-      const updated = await api.runs.execute(project.id, runId, approved)
+      const queued = await api.runs.execute(project.id, runId, approved)
+      storeRun(queued)
+      const updated = await api.runs.waitForCompletion(project.id, runId, storeRun)
       await refreshProgress()
       storeRun(updated)
       if (updated.status === 'COMPLETED') notify('AI 작업을 완료했습니다.')

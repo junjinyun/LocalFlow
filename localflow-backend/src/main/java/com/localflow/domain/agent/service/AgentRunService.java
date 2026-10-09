@@ -59,12 +59,23 @@ public class AgentRunService {
     }
 
     public AgentRun requireRun(String projectId, String runId) {
-        AgentRun run = repository.findById(runId)
+        AgentRun run = repository.findDetailedById(runId)
                 .orElseThrow(() -> new CustomException(ErrorCode.AGENT_RUN_NOT_FOUND));
+        validateProject(projectId, run);
+        return run;
+    }
+
+    public AgentRun requireRunForUpdate(String projectId, String runId) {
+        AgentRun run = repository.findByIdForUpdate(runId)
+                .orElseThrow(() -> new CustomException(ErrorCode.AGENT_RUN_NOT_FOUND));
+        validateProject(projectId, run);
+        return run;
+    }
+
+    private void validateProject(String projectId, AgentRun run) {
         if (!run.getProject().getId().equals(projectId)) {
             throw new CustomException(ErrorCode.AGENT_RUN_NOT_FOUND);
         }
-        return run;
     }
 
     private AgentPlan plan(AgentRun run) {
