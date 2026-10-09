@@ -6,6 +6,7 @@ import type { ExecutionMode, PermissionPolicy, PrivacyMode, Project, ProjectSett
 type Props = {
   project: Project
   providers: Provider[]
+  onProvidersRefreshed: (providers: Provider[]) => void
   onUpdated: (project: Project) => void
   onRemoved: (projectId: string) => Promise<void> | void
   notify: (message: string, tone?: 'success' | 'error') => void
@@ -13,7 +14,7 @@ type Props = {
 
 const policyLabels: Record<PermissionPolicy, string> = { ALLOW: '항상 허용', CONFIRM: '매번 확인', DENY: '허용 안 함' }
 
-export default function SettingsView({ project, providers, onUpdated, onRemoved, notify }: Props) {
+export default function SettingsView({ project, providers, onProvidersRefreshed, onUpdated, onRemoved, notify }: Props) {
   const [settings, setSettings] = useState<ProjectSettings | null>(null)
   const [name, setName] = useState(project.name)
   const [description, setDescription] = useState(project.description ?? '')
@@ -31,7 +32,9 @@ export default function SettingsView({ project, providers, onUpdated, onRemoved,
   const refreshProviders = async () => {
     setRefreshingProviders(true)
     try {
-      setProviderState(await api.providers())
+      const refreshed = await api.providers(true)
+      setProviderState(refreshed)
+      onProvidersRefreshed(refreshed)
       notify('AI 제공자 상태를 갱신했습니다.')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'AI 제공자 상태를 불러오지 못했습니다.', 'error')
@@ -77,6 +80,17 @@ export default function SettingsView({ project, providers, onUpdated, onRemoved,
     { key: 'executePolicy', label: '코드 실행', detail: '명령 및 테스트 실행 · 현재 미지원' },
   ]
 
+  const providerStatus = (provider: Provider) => {
+    if (provider.available) return { label: '사용 가능', tone: 'ready' }
+    if (provider.type === 'OLLAMA' && provider.configured && !provider.reachable) {
+      return { label: '연결 실패', tone: 'error' }
+    }
+    if (provider.type === 'OLLAMA' && provider.reachable && !provider.modelInstalled) {
+      return { label: '모델 없음', tone: 'warning' }
+    }
+    return { label: '환경 설정 필요', tone: '' }
+  }
+
   return (
     <section className="settings-layout">
       <div className="settings-main">
@@ -91,7 +105,13 @@ export default function SettingsView({ project, providers, onUpdated, onRemoved,
       </div>
 
       <aside className="settings-side">
-        <section className="settings-card panel"><div className="settings-title compact"><div className="settings-icon"><Cloud size={18} /></div><div><h2>AI 제공자</h2><p>환경 변수 연결 상태</p></div><button className="icon-button" onClick={refreshProviders} disabled={refreshingProviders} title="제공자 상태 새로고침"><RefreshCw className={refreshingProviders ? 'spin' : ''} size={15} /></button></div><div className="provider-list">{providerState.map(provider => <div key={provider.type}><span className="provider-logo">{provider.displayName.slice(0, 1)}</span><span><strong>{provider.displayName}</strong><small>{provider.model || provider.credentialType}</small></span><i className={provider.configured ? 'ready' : ''}>{provider.configured ? <><Check size={12} />설정됨</> : '환경 설정 필요'}</i></div>)}</div></section>
+        <section className="settings-card panel"><div className="settings-title compact"><div className="settings-icon"><Cloud size={18} /></div><div><h2>AI 제공자</h2><p>환경 변수와 실제 연결 상태</p></div><button className="icon-button" onClick={refreshProviders} disabled={refreshingProviders} title="제공자 상태 새로고침"><RefreshCw className={refreshingProviders ? 'spin' : ''} size={15} /></button></div><div className="provider-list">{providerState.map(provider => {
+          const status = providerStatus(provider)
+          const modelSummary = provider.type === 'OLLAMA' && provider.models.length
+            ? `설치 모델 ${provider.models.length}개 · ${provider.models.join(', ')}`
+            : provider.model || provider.credentialType
+          return <div key={provider.type} title={provider.statusMessage}><span className="provider-logo">{provider.displayName.slice(0, 1)}</span><span><strong>{provider.displayName}</strong><small>{modelSummary}</small><small className="provider-status-message">{provider.statusMessage}</small></span><i className={status.tone}>{provider.available && <Check size={12} />}{status.label}</i></div>
+        })}</div></section>
         <button className="primary-button wide" onClick={save} disabled={saving || !name.trim()}><Save size={16} />{saving ? '저장 중…' : '모든 설정 저장'}</button>
       </aside>
     </section>

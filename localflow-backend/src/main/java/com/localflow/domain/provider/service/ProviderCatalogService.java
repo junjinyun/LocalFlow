@@ -1,6 +1,7 @@
 package com.localflow.domain.provider.service;
 
 import com.localflow.domain.provider.domain.AiProviderType;
+import com.localflow.domain.provider.domain.OllamaStatus;
 import com.localflow.domain.provider.domain.ProviderRole;
 import com.localflow.domain.provider.dto.ProviderResponse;
 import com.localflow.domain.provider.port.DecisionProvider;
@@ -24,26 +25,41 @@ public class ProviderCatalogService {
     }
 
     public List<ProviderResponse> findAll() {
+        return findAll(false);
+    }
+
+    public List<ProviderResponse> findAll(boolean refresh) {
         return List.of(
                 decision(AiProviderType.JEV, "TypeSafe Jev (OpenRouter)", "OPENROUTER_API_KEY"),
-                generation(AiProviderType.OPENAI, "OpenAI API", "OPENAI_API_KEY"),
-                generation(AiProviderType.VERTEX_AI, "Google Cloud Vertex AI", "SERVICE_ACCOUNT_ENV"),
-                generation(AiProviderType.OLLAMA, "Ollama", "LOCAL_ENDPOINT")
+                generation(AiProviderType.OPENAI, "OpenAI API", "OPENAI_API_KEY", refresh),
+                generation(AiProviderType.VERTEX_AI, "Google Cloud Vertex AI", "SERVICE_ACCOUNT_ENV", refresh),
+                generation(AiProviderType.OLLAMA, "Ollama", "LOCAL_ENDPOINT", refresh)
         );
     }
 
-    private ProviderResponse generation(AiProviderType type, String displayName, String credentialType) {
+    private ProviderResponse generation(AiProviderType type, String displayName, String credentialType,
+                                        boolean refresh) {
         GenerationProvider provider = generationProviders.get(type);
+        if (provider instanceof OllamaGenerationProvider ollamaProvider) {
+            OllamaStatus status = ollamaProvider.status(refresh);
+            return new ProviderResponse(type, ProviderRole.GENERATION, displayName, credentialType,
+                    true, status.configured(), status.reachable(), status.modelInstalled(),
+                    status.available(), status.message(), provider.model(), status.models());
+        }
+        boolean available = provider != null && provider.available();
         return new ProviderResponse(type, ProviderRole.GENERATION, displayName, credentialType,
-                provider != null, provider != null && provider.available(),
+                provider != null, available, null, null, available,
+                available ? "사용할 수 있습니다." : "환경 설정이 필요합니다.",
                 provider == null ? null : provider.model(),
                 provider == null ? List.of() : provider.models());
     }
 
     private ProviderResponse decision(AiProviderType type, String displayName, String credentialType) {
         DecisionProvider provider = decisionProviders.get(type);
+        boolean available = provider != null && provider.available();
         return new ProviderResponse(type, ProviderRole.DECISION, displayName, credentialType,
-                provider != null, provider != null && provider.available(),
+                provider != null, available, null, null, available,
+                available ? "사용할 수 있습니다." : "환경 설정이 필요합니다.",
                 provider == null ? null : provider.model(), List.of());
     }
 }

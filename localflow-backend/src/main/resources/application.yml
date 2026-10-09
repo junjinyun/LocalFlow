@@ -79,8 +79,11 @@ localflow:
       base-url: ${JEV_BASE_URL:https://openrouter.ai/api/alpha/decisions}
       model: ${JEV_MODEL:typesafe/jev-1.13}
     ollama:
+      enabled: ${OLLAMA_ENABLED:false}
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      model: ${OLLAMA_MODEL:qwen3:8b}
+      model: ${OLLAMA_MODEL:qwen2.5-coder:3b}
+      status-cache-ttl: ${OLLAMA_STATUS_CACHE_TTL:5s}
+      status-timeout: ${OLLAMA_STATUS_TIMEOUT:2s}
     vertex-ai:
       credentials-base64: ${VERTEX_AI_SERVICE_ACCOUNT_BASE64:}
       project-id: ${VERTEX_AI_PROJECT:}

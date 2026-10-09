@@ -388,8 +388,11 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .provider-list div > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
 .provider-list strong { font-size: 11px; }
 .provider-list small { margin-top: 3px; overflow: hidden; color: #8a9188; font-size: 10px; text-overflow: ellipsis; }
+.provider-list .provider-status-message { color: #a06b3e; white-space: normal; line-height: 1.4; }
 .provider-list i { color: #90978e; font-size: 10px; font-style: normal; }
 .provider-list i.ready { display: flex; align-items: center; gap: 3px; color: #5d7c59; }
+.provider-list i.warning { color: #8b6b25; }
+.provider-list i.error { color: #a04f48; }
 .danger-card { min-height: 72px; padding: 13px 17px; display: flex; align-items: center; justify-content: space-between; }
 .danger-card > div { display: flex; align-items: center; gap: 10px; color: var(--danger); }
 .danger-card span strong { color: #484d47; font-size: 12px; }

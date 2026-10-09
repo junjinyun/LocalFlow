@@ -1,5 +1,6 @@
 package com.localflow.domain.provider.config;
 
+import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -27,9 +28,18 @@ public record AiProviderProperties(
         public boolean configured() { return apiKey != null && !apiKey.isBlank(); }
     }
 
-    public record Ollama(String baseUrl, String model) {
+    public record Ollama(boolean enabled, String baseUrl, String model,
+                         Duration statusCacheTtl, Duration statusTimeout) {
+        public Ollama {
+            statusCacheTtl = statusCacheTtl == null || statusCacheTtl.isNegative()
+                    ? Duration.ofSeconds(5) : statusCacheTtl;
+            statusTimeout = statusTimeout == null || statusTimeout.isNegative() || statusTimeout.isZero()
+                    ? Duration.ofSeconds(2) : statusTimeout;
+        }
+
         public boolean configured() {
-            return baseUrl != null && !baseUrl.isBlank() && model != null && !model.isBlank();
+            return enabled && baseUrl != null && !baseUrl.isBlank()
+                    && model != null && !model.isBlank();
         }
     }
 

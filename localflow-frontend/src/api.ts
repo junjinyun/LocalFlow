@@ -138,6 +138,6 @@ export const api = {
         method: 'POST', body: JSON.stringify({ approved }),
       }),
   },
-  providers: () => request<Provider[]>('/api/ai/providers'),
+  providers: (refresh = false) => request<Provider[]>(`/api/ai/providers?refresh=${refresh}`),
   health: () => request<{ status: string; service: string }>('/api/health'),
 }

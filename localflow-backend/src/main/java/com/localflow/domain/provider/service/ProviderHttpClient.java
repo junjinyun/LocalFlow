@@ -25,11 +25,24 @@ public class ProviderHttpClient {
 
     public JsonNode post(AiProviderType providerType, String url, JsonNode body,
                          Map<String, String> headers) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofMinutes(3))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(writeBody(providerType, body)));
+        return send(providerType, builder, headers);
+    }
+
+    public JsonNode get(AiProviderType providerType, String url,
+                        Map<String, String> headers, Duration timeout) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .timeout(timeout)
+                .GET();
+        return send(providerType, builder, headers);
+    }
+
+    private JsonNode send(AiProviderType providerType, HttpRequest.Builder builder,
+                          Map<String, String> headers) {
         try {
-            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofMinutes(3))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)));
             headers.forEach(builder::header);
             HttpResponse<String> response = httpClient.send(builder.build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -43,6 +56,15 @@ public class ProviderHttpClient {
         } catch (Exception exception) {
             throw new ProviderCallException(providerType,
                     "AI 제공자 요청에 실패했습니다: " + exception.getMessage(), exception);
+        }
+    }
+
+    private String writeBody(AiProviderType providerType, JsonNode body) {
+        try {
+            return objectMapper.writeValueAsString(body);
+        } catch (Exception exception) {
+            throw new ProviderCallException(providerType,
+                    "AI 제공자 요청 본문 생성에 실패했습니다: " + exception.getMessage(), exception);
         }
     }
 
