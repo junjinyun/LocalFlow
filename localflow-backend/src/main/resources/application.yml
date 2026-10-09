@@ -1,0 +1,89 @@
+spring:
+  config:
+    # 로컬 실행용 .env만 properties 형식으로 읽습니다. .env.example은 로드하지 않습니다.
+    import: "optional:file:.env[.properties]"
+  application:
+    name: localflow-backend
+  datasource:
+    url: ${LOCALFLOW_DB_URL:jdbc:h2:file:./data/localflow;MODE=MySQL;AUTO_SERVER=TRUE}
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 300MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  tomcat:
+    # 파일 최대 5,000개 + JSON manifest 1개를 허용합니다.
+    max-part-count: 5100
+    max-parameter-count: 5200
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+localflow:
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:5173
+  workspace:
+    root: ${LOCALFLOW_WORKSPACE_ROOT:./workspace}
+    max-project-bytes: 262144000
+    max-file-bytes: 31457280
+    max-files: 5000
+    ignored-directories:
+      - .git
+      - .gradle
+      - .idea
+      - .venv
+      - build
+      - coverage
+      - dist
+      - .next
+      - .nuxt
+      - .turbo
+      - .cache
+      - .portfolio
+      - node_modules
+      - out
+      - target
+      - vendor
+      - venv
+  ai:
+    context-max-chars: ${AI_CONTEXT_MAX_CHARS:60000}
+    max-operations: ${AI_MAX_OPERATIONS:20}
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      model: ${OPENAI_MODEL:gpt-5-mini}
+      models: ${OPENAI_MODELS:gpt-5.1,gpt-5,gpt-5-mini,gpt-5-nano,gpt-4.1}
+      max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:6000}
+    jev:
+      api-key: ${OPENROUTER_API_KEY:}
+      base-url: ${JEV_BASE_URL:https://openrouter.ai/api/alpha/decisions}
+      model: ${JEV_MODEL:typesafe/jev-1.13}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model: ${OLLAMA_MODEL:qwen3:8b}
+    vertex-ai:
+      credentials-base64: ${VERTEX_AI_SERVICE_ACCOUNT_BASE64:}
+      project-id: ${VERTEX_AI_PROJECT:}
+      location: ${VERTEX_AI_LOCATION:us-central1}
+      model: ${VERTEX_AI_MODEL:gemini-2.5-flash}
+      models: ${VERTEX_AI_MODELS:gemini-2.5-flash,gemini-2.5-pro,gemini-2.5-flash-lite}

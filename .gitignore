@@ -1,0 +1,36 @@
+# IDE and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secrets and local environment
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*service-account*.json
+
+# Java and Gradle
+**/.gradle/
+**/build/
+**/out/
+*.class
+
+# Node and Vite
+**/node_modules/
+**/dist/
+**/.vite/
+**/*.tsbuildinfo
+localflow-frontend/vite.config.js
+localflow-frontend/vite.config.d.ts
+
+# LocalFlow runtime data
+localflow-backend/data/
+localflow-backend/workspace/
+
+# Logs
+*.log
