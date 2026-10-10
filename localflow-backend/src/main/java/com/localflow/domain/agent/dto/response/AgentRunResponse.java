@@ -20,6 +20,7 @@ public record AgentRunResponse(
         String decisionJson,
         String planJson,
         String changesJson,
+        String inputSnapshotJson,
         String resultMessage,
         String errorMessage,
         String model,
@@ -33,7 +34,8 @@ public record AgentRunResponse(
         return new AgentRunResponse(run.getId(), run.getProject().getId(), run.getPrompt(),
                 run.getExecutionMode(), run.getPreferredGenerationProvider(),
                 run.getPreferredModel(), run.getActualGenerationProvider(), run.getStatus(), notice(run),
-                run.getDecompositionJson(), run.getDecisionJson(), run.getPlanJson(), run.getChangesJson(), run.getResultMessage(),
+                run.getDecompositionJson(), run.getDecisionJson(), run.getPlanJson(), run.getChangesJson(),
+                run.getInputSnapshotJson(), run.getResultMessage(),
                 run.getErrorMessage(), run.getModel(), run.getInputTokens(), run.getOutputTokens(),
                 run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt());
     }

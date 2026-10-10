@@ -68,6 +68,9 @@ public class AgentRun {
     private String changesJson;
 
     @Lob
+    private String inputSnapshotJson;
+
+    @Lob
     private String resultMessage;
 
     @Column(length = 2000)
@@ -153,6 +156,11 @@ public class AgentRun {
         touch();
     }
 
+    public void recordInputSnapshot(String inputSnapshotJson) {
+        this.inputSnapshotJson = inputSnapshotJson;
+        touch();
+    }
+
     public void complete(String decisionJson, String planJson, String message,
                          String model, Integer inputTokens, Integer outputTokens) {
         this.decisionJson = decisionJson;
@@ -189,6 +197,7 @@ public class AgentRun {
     public String getDecisionJson() { return decisionJson; }
     public String getPlanJson() { return planJson; }
     public String getChangesJson() { return changesJson; }
+    public String getInputSnapshotJson() { return inputSnapshotJson; }
     public String getResultMessage() { return resultMessage; }
     public String getErrorMessage() { return errorMessage; }
     public Integer getInputTokens() { return inputTokens; }

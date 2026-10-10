@@ -2,6 +2,7 @@ package com.localflow.domain.agent.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.localflow.domain.agent.domain.AgentFileChangeSnapshot;
+import com.localflow.domain.agent.domain.AgentInputSnapshot;
 import com.localflow.domain.agent.domain.AgentProgressStage;
 import com.localflow.domain.agent.domain.AgentPlan;
 import com.localflow.domain.agent.domain.AgentRunStatus;
@@ -178,18 +179,23 @@ public class AgentExecutionService {
             boolean includeContents = settings.getReadPolicy() != PermissionPolicy.DENY;
             progressService.append(projectId, runId, AgentProgressStage.SELECTING_CONTEXT,
                     "태그와 프로젝트 인덱스를 기준으로 관련 파일을 찾는 중입니다.");
-            String context = contextService.build(run.getProject(), run.getPrompt(), decision, includeContents);
+            AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
+                    run.getProject(), run.getPrompt(), decision, includeContents);
+            String systemPrompt = systemPrompt();
+            String userPrompt = userPrompt(run.getPrompt(), decomposition.value(), decision,
+                    contextSnapshot.content());
+            GenerationRequest generationRequest = new GenerationRequest(
+                    systemPrompt, userPrompt, selectedModel, outputSchemas.filePlan());
+            GenerationRequest preparedRequest = generationRequest.withSchemaInstruction("파일 변경 계획");
+            run.recordInputSnapshot(objectMapper.writeValueAsString(new AgentInputSnapshot(
+                    contextSnapshot.files(), preparedRequest.systemPrompt(), preparedRequest.userPrompt())));
             run.startPlanning(provider.providerType());
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
                     "선택한 AI가 코드와 파일 변경 계획을 생성하는 중입니다.");
             appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
             ParsedGeneration<AgentPlan> planGeneration = structuredGenerationService.generate(
                     provider,
-                    new GenerationRequest(
-                            systemPrompt(),
-                            userPrompt(run.getPrompt(), decomposition.value(), decision, context),
-                            selectedModel,
-                            outputSchemas.filePlan()),
+                    generationRequest,
                     planParser::parse,
                     "파일 변경 계획");
             GenerationResult generation = planGeneration.generation();

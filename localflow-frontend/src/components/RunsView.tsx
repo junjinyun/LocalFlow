@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw } from 'lucide-react'
 import { api } from '../api'
-import type { AgentDecision, AgentFileChangeSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, Project, TaskDecomposition } from '../types'
+import type { AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, Project, TaskDecomposition } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
@@ -96,6 +96,11 @@ export default function RunsView({ project, notify }: { project: Project; notify
     try { return JSON.parse(run.changesJson) as AgentFileChangeSnapshot[] } catch { return null }
   }
 
+  const inputSnapshotOf = (run: AgentRun): AgentInputSnapshot | null => {
+    if (!run.inputSnapshotJson) return null
+    try { return JSON.parse(run.inputSnapshotJson) as AgentInputSnapshot } catch { return null }
+  }
+
   const summaryFromRun = (run: AgentRun): AgentRunSummary => {
     const plan = planOf(run)
     return {
@@ -144,6 +149,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
     const decision = decisionOf(selectedRun)
     const decomposition = decompositionOf(selectedRun)
     const recordedChanges = changesOf(selectedRun)
+    const inputSnapshot = inputSnapshotOf(selectedRun)
     const changes = recordedChanges ?? (plan?.operations.map(operation => ({
       action: operation.action,
       path: operation.path,
@@ -231,6 +237,22 @@ export default function RunsView({ project, notify }: { project: Project; notify
               {decision?.taskScopes && decision.taskScopes.length > 0 && <><dt>작업 분해</dt><dd><ol className="decision-task-list">{decision.taskScopes.map((scope, index) => <li key={`${scope.instruction}-${index}`}><strong>{scope.instruction}</strong>{scope.tags.length > 0 && <small>{scope.tags.join(' · ')}</small>}</li>)}</ol></dd></>}
               {decision?.selectedTags && decision.selectedTags.length > 0 && <><dt>선택 태그</dt><dd>{decision.selectedTags.join(' · ')}</dd></>}
             </dl>
+            {!inputSnapshot ? <p className="run-input-empty">이 실행에는 저장된 AI 입력 스냅샷이 없습니다.</p> : <div className="run-input-snapshot">
+              <details>
+                <summary>AI에 본문을 전달한 파일 <span>{inputSnapshot.contextFiles.length}</span><ChevronRight size={15} /></summary>
+                {inputSnapshot.contextFiles.length === 0
+                  ? <p>파일 본문을 전달하지 않았습니다.</p>
+                  : <ul>{inputSnapshot.contextFiles.map(path => <li key={path}><code>{path}</code></li>)}</ul>}
+              </details>
+              <details>
+                <summary>시스템 전처리 프롬프트 <ChevronRight size={15} /></summary>
+                <pre>{inputSnapshot.systemPrompt}</pre>
+              </details>
+              <details>
+                <summary>사용자 전처리 프롬프트 <ChevronRight size={15} /></summary>
+                <pre>{inputSnapshot.userPrompt}</pre>
+              </details>
+            </div>}
           </section>
 
           <div className="run-detail-actions">
