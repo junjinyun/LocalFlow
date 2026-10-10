@@ -16,6 +16,7 @@ public enum ErrorCode {
             "업로드 요청을 해석하지 못했습니다. 파일 수와 전체 용량을 확인해 주세요."),
     FILE_OPERATION_DENIED(HttpStatus.FORBIDDEN, "프로젝트 설정에서 허용하지 않은 파일 작업입니다."),
     INVALID_RUN_STATUS(HttpStatus.CONFLICT, "현재 상태에서는 요청한 실행 작업을 처리할 수 없습니다."),
+    AGENT_RUN_ALREADY_ACTIVE(HttpStatus.CONFLICT, "이 프로젝트에서 이미 AI 작업이 실행 중이거나 승인을 기다리고 있습니다."),
     PROVIDER_NOT_CONFIGURED(HttpStatus.BAD_REQUEST, "선택한 AI 제공자의 환경 변수가 설정되지 않았습니다."),
     AI_MODEL_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "선택한 AI 모델은 현재 제공자에서 허용되지 않습니다."),
     EXTERNAL_PROVIDER_DENIED(HttpStatus.FORBIDDEN, "로컬 전용 개인정보 설정에서는 외부 AI를 사용할 수 없습니다."),

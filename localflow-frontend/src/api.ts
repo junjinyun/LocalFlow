@@ -121,6 +121,7 @@ export const api = {
   },
   runs: {
     list: (projectId: string) => request<AgentRunSummary[]>(`/api/projects/${projectId}/agent-runs`),
+    active: (projectId: string) => request<AgentRun[]>(`/api/projects/${projectId}/agent-runs/active`),
     get: (projectId: string, runId: string) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}`),
     progress: (projectId: string, runId: string) =>

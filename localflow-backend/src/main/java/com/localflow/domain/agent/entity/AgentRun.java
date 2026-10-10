@@ -111,6 +111,13 @@ public class AgentRun {
         this.updatedAt = Instant.now();
     }
 
+    public void queue() {
+        this.status = AgentRunStatus.PENDING;
+        this.errorMessage = null;
+        this.completedAt = null;
+        touch();
+    }
+
     public void startDeciding() {
         this.status = AgentRunStatus.DECIDING;
         touch();
@@ -148,6 +155,11 @@ public class AgentRun {
     public void startRunning(String changesJson) {
         this.changesJson = changesJson;
         this.status = AgentRunStatus.RUNNING;
+        touch();
+    }
+
+    public void startValidating() {
+        this.status = AgentRunStatus.VALIDATING;
         touch();
     }
 

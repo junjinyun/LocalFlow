@@ -6,6 +6,7 @@ import com.localflow.domain.agent.dto.response.AgentRunResponse;
 import com.localflow.domain.agent.dto.response.AgentRunProgressResponse;
 import com.localflow.domain.agent.dto.response.AgentRunSummaryResponse;
 import com.localflow.domain.agent.service.AgentExecutionService;
+import com.localflow.domain.agent.service.AgentRunDispatchService;
 import com.localflow.domain.agent.service.AgentRunProgressService;
 import com.localflow.domain.agent.service.AgentRunService;
 import com.localflow.global.common.ApiResponse;
@@ -28,23 +29,27 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentRunController {
     private final AgentRunService agentRunService;
     private final AgentExecutionService agentExecutionService;
+    private final AgentRunDispatchService dispatchService;
     private final AgentRunProgressService progressService;
 
     public AgentRunController(AgentRunService agentRunService,
                               AgentExecutionService agentExecutionService,
+                              AgentRunDispatchService dispatchService,
                               AgentRunProgressService progressService) {
         this.agentRunService = agentRunService;
         this.agentExecutionService = agentExecutionService;
+        this.dispatchService = dispatchService;
         this.progressService = progressService;
     }
 
-    @Operation(summary = "에이전트 실행 또는 승인 후 파일 작업 적용")
+    @Operation(summary = "에이전트 비동기 실행 요청 또는 승인 후 작업 재개")
     @PostMapping("/{runId}/execute")
+    @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<AgentRunResponse> execute(@PathVariable String projectId,
                                                 @PathVariable String runId,
                                                 @RequestBody(required = false) AgentRunExecuteRequest request) {
         boolean approved = request != null && request.isApproved();
-        return ApiResponse.success(agentExecutionService.execute(projectId, runId, approved));
+        return ApiResponse.success(dispatchService.enqueue(projectId, runId, approved));
     }
 
     @Operation(summary = "에이전트 실행 초안 생성")
@@ -64,6 +69,12 @@ public class AgentRunController {
     @GetMapping
     public ApiResponse<List<AgentRunSummaryResponse>> findAll(@PathVariable String projectId) {
         return ApiResponse.success(agentRunService.findAll(projectId));
+    }
+
+    @Operation(summary = "프로젝트의 실행 중 또는 승인 대기 작업 조회")
+    @GetMapping("/active")
+    public ApiResponse<List<AgentRunResponse>> findActive(@PathVariable String projectId) {
+        return ApiResponse.success(agentRunService.findActive(projectId));
     }
 
     @Operation(summary = "에이전트 실행 기록 단건 조회")
