@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw } from 'lucide-react'
 import { api } from '../api'
-import type { AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, Project, TaskDecomposition } from '../types'
+import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, Project, TaskDecomposition } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
@@ -133,6 +133,11 @@ export default function RunsView({ project, notify }: { project: Project; notify
     try { return JSON.parse(run.inputSnapshotJson) as AgentInputSnapshot } catch { return null }
   }
 
+  const applyResultOf = (run: AgentRun): AgentApplyResult | null => {
+    if (!run.applicationResultJson) return null
+    try { return JSON.parse(run.applicationResultJson) as AgentApplyResult } catch { return null }
+  }
+
   const summaryFromRun = (run: AgentRun): AgentRunSummary => {
     const plan = planOf(run)
     return {
@@ -182,6 +187,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
     const decomposition = decompositionOf(selectedRun)
     const recordedChanges = changesOf(selectedRun)
     const inputSnapshot = inputSnapshotOf(selectedRun)
+    const applyResult = applyResultOf(selectedRun)
     const changes = recordedChanges ?? (plan?.operations.map(operation => ({
       action: operation.action,
       path: operation.path,
@@ -257,6 +263,17 @@ export default function RunsView({ project, notify }: { project: Project; notify
             )}
           </section>
 
+          {applyResult && <section className="run-detail-section">
+            <h3>파일 적용 결과</h3>
+            <dl className="execution-grid">
+              <dt>적용 결과</dt><dd>{applyResult.success ? '전체 적용 완료' : '적용 실패'}</dd>
+              <dt>처리 작업</dt><dd>{applyResult.appliedOperations}개</dd>
+              <dt>롤백</dt><dd>{applyResult.rollbackAttempted ? (applyResult.rollbackSuccessful ? '원본 복구 완료' : '복구 실패') : '실행하지 않음'}</dd>
+              {applyResult.errorMessage && <><dt>실패 원인</dt><dd>{applyResult.errorMessage}</dd></>}
+              {applyResult.recoveryRequiredPaths.length > 0 && <><dt>수동 확인 파일</dt><dd>{applyResult.recoveryRequiredPaths.map(path => <code key={path}>{path}</code>)}</dd></>}
+            </dl>
+          </section>}
+
           <section className="run-detail-section">
             <h3>실행 정보</h3>
             <dl className="run-metadata">
@@ -314,6 +331,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
                 : run.status === 'WAITING_APPROVAL' ? '파일 변경 계획이 준비되어 승인을 기다리고 있습니다.'
                   : run.status === 'CANCEL_REQUESTED' ? '취소 요청을 처리하고 AI 결과를 폐기하는 중입니다.'
                     : run.status === 'CANCELLED' ? '사용자가 실행을 취소했습니다.'
+                    : run.status === 'RECOVERY_REQUIRED' ? '자동 복구하지 못한 파일이 있어 수동 확인이 필요합니다.'
                   : run.status === 'FAILED' ? '실행에 실패했습니다. 상세 화면에서 오류 내용을 확인해 주세요.'
                     : 'AI 작업이 준비되었거나 진행 중입니다.'
             )

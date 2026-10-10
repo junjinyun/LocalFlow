@@ -12,6 +12,8 @@ public enum AgentProgressStage {
     APPLYING,
     CANCELLATION_REQUESTED,
     CANCELLED,
+    ROLLED_BACK,
+    RECOVERY_REQUIRED,
     COMPLETED,
     FAILED
 }

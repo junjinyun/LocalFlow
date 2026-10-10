@@ -73,6 +73,9 @@ public class AgentRun {
     @Lob
     private String resultMessage;
 
+    @Lob
+    private String applicationResultJson;
+
     @Column(length = 2000)
     private String errorMessage;
 
@@ -190,6 +193,19 @@ public class AgentRun {
         touch();
     }
 
+    public void recordApplicationResult(String applicationResultJson) {
+        this.applicationResultJson = applicationResultJson;
+        touch();
+    }
+
+    public void requireRecovery(String message, String applicationResultJson) {
+        this.applicationResultJson = applicationResultJson;
+        this.errorMessage = message;
+        this.status = AgentRunStatus.RECOVERY_REQUIRED;
+        this.completedAt = Instant.now();
+        touch();
+    }
+
     public void complete(String decisionJson, String planJson, String message,
                          String model, Integer inputTokens, Integer outputTokens) {
         this.decisionJson = decisionJson;
@@ -228,6 +244,7 @@ public class AgentRun {
     public String getChangesJson() { return changesJson; }
     public String getInputSnapshotJson() { return inputSnapshotJson; }
     public String getResultMessage() { return resultMessage; }
+    public String getApplicationResultJson() { return applicationResultJson; }
     public String getErrorMessage() { return errorMessage; }
     public Integer getInputTokens() { return inputTokens; }
     public Integer getOutputTokens() { return outputTokens; }

@@ -29,12 +29,9 @@ import com.localflow.domain.provider.service.OllamaGenerationProvider;
 import com.localflow.domain.provider.service.OllamaLocalPolicy;
 import com.localflow.domain.provider.service.StructuredGenerationService;
 import com.localflow.domain.provider.service.StructuredGenerationService.ParsedGeneration;
-import com.localflow.domain.workspace.dto.FileMoveRequest;
-import com.localflow.domain.workspace.dto.FileWriteRequest;
 import com.localflow.domain.workspace.domain.FileCategory;
 import com.localflow.domain.workspace.entity.ProjectFile;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
-import com.localflow.domain.workspace.service.ProjectFileService;
 import com.localflow.domain.workspace.service.WorkspaceStorageService;
 import com.localflow.global.error.CustomException;
 import com.localflow.global.error.ErrorCode;
@@ -58,7 +55,7 @@ public class AgentExecutionService {
     private final OllamaLocalPolicy ollamaLocalPolicy;
     private final ProjectSettingsRepository settingsRepository;
     private final ProjectFileRepository fileRepository;
-    private final ProjectFileService fileService;
+    private final AgentFileChangeTransactionService fileChangeTransactionService;
     private final WorkspaceStorageService storageService;
     private final ChatMessageRepository chatRepository;
     private final AgentRunProgressService progressService;
@@ -77,7 +74,7 @@ public class AgentExecutionService {
                                  OllamaLocalPolicy ollamaLocalPolicy,
                                  ProjectSettingsRepository settingsRepository,
                                  ProjectFileRepository fileRepository,
-                                 ProjectFileService fileService,
+                                 AgentFileChangeTransactionService fileChangeTransactionService,
                                  WorkspaceStorageService storageService,
                                  ChatMessageRepository chatRepository,
                                  AgentRunProgressService progressService,
@@ -95,7 +92,7 @@ public class AgentExecutionService {
         this.ollamaLocalPolicy = ollamaLocalPolicy;
         this.settingsRepository = settingsRepository;
         this.fileRepository = fileRepository;
-        this.fileService = fileService;
+        this.fileChangeTransactionService = fileChangeTransactionService;
         this.storageService = storageService;
         this.chatRepository = chatRepository;
         this.progressService = progressService;
@@ -120,7 +117,9 @@ public class AgentExecutionService {
                 run.startRunning(snapshotJson(projectId, storedPlan));
                 runRepository.saveAndFlush(run);
                 cancellationService.checkpoint(projectId, runId);
-                apply(projectId, runId, storedPlan);
+                var applyResult = fileChangeTransactionService.apply(projectId, storedPlan,
+                        () -> cancellationService.checkpoint(projectId, runId));
+                run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
                 cancellationService.checkpoint(projectId, runId);
                 run.complete(run.getDecisionJson(), run.getPlanJson(), storedPlan.response(),
                         run.getModel(), run.getInputTokens(), run.getOutputTokens());
@@ -245,7 +244,9 @@ public class AgentExecutionService {
             run.startRunning(changesJson);
             runRepository.saveAndFlush(run);
             cancellationService.checkpoint(projectId, runId);
-            apply(projectId, runId, plan);
+            var applyResult = fileChangeTransactionService.apply(projectId, plan,
+                    () -> cancellationService.checkpoint(projectId, runId));
+            run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
             cancellationService.checkpoint(projectId, runId);
             run.complete(decisionJson, planJson, plan.response(), generation.model(),
                     inputTokens, outputTokens);
@@ -253,6 +254,8 @@ public class AgentExecutionService {
             addSystemMessage(run, plan.response());
             progressService.append(projectId, runId, AgentProgressStage.COMPLETED,
                     "AI 작업과 결과 정리를 모두 완료했습니다.");
+        } catch (AgentFileApplyException exception) {
+            handleApplyFailure(projectId, runId, run, exception);
         } catch (AgentRunCancelledException exception) {
             cancellationService.complete(projectId, runId);
         } catch (Exception exception) {
@@ -349,29 +352,32 @@ public class AgentExecutionService {
         };
     }
 
-    private void apply(String projectId, String runId, AgentPlan plan) {
-        for (FileOperationPlan operation : plan.operations()) {
-            cancellationService.checkpoint(projectId, runId);
-            String path = operation.path();
-            ProjectFile current = fileRepository.findByProject_IdAndRelativePath(projectId, path).orElse(null);
-            switch (operation.action()) {
-                case CREATE -> fileService.write(projectId, null,
-                        new FileWriteRequest(path, operation.content(), true));
-                case UPDATE -> {
-                    if (current == null) throw new CustomException(ErrorCode.PROJECT_FILE_NOT_FOUND);
-                    fileService.write(projectId, current.getId(),
-                            new FileWriteRequest(path, operation.content(), true));
-                }
-                case MOVE -> {
-                    if (current == null) throw new CustomException(ErrorCode.PROJECT_FILE_NOT_FOUND);
-                    fileService.move(projectId, current.getId(),
-                            new FileMoveRequest(operation.destinationPath(), true));
-                }
-                case DELETE -> {
-                    if (current == null) throw new CustomException(ErrorCode.PROJECT_FILE_NOT_FOUND);
-                    fileService.delete(projectId, current.getId(), true);
-                }
+    private void handleApplyFailure(String projectId, String runId, AgentRun run,
+                                    AgentFileApplyException exception) {
+        try {
+            String resultJson = objectMapper.writeValueAsString(exception.result());
+            if (exception.result().rollbackSuccessful()
+                    && cancellationService.isCancellationRequested(projectId, runId)) {
+                cancellationService.complete(projectId, runId);
+                return;
             }
+            if (!exception.result().rollbackSuccessful()) {
+                run.requireRecovery(exception.getMessage(), resultJson);
+                runRepository.saveAndFlush(run);
+                progressService.append(projectId, runId, AgentProgressStage.RECOVERY_REQUIRED,
+                        "일부 파일을 자동 복구하지 못했습니다. 실행 상세에서 복구 대상 파일을 확인해 주세요.");
+                return;
+            }
+            run.recordApplicationResult(resultJson);
+            run.fail(exception.getMessage());
+            runRepository.saveAndFlush(run);
+            progressService.append(projectId, runId, AgentProgressStage.ROLLED_BACK,
+                    "파일 변경 중 오류가 발생해 적용된 변경을 모두 원본 상태로 복구했습니다.");
+        } catch (Exception handlingException) {
+            run.requireRecovery("파일 변경 실패 결과를 기록하지 못했습니다.", null);
+            runRepository.saveAndFlush(run);
+            progressService.append(projectId, runId, AgentProgressStage.RECOVERY_REQUIRED,
+                    "파일 변경 실패 결과를 기록하지 못했습니다. 프로젝트 파일을 확인해 주세요.");
         }
     }
 

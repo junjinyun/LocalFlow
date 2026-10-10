@@ -8,6 +8,7 @@ import com.localflow.domain.project.service.ProjectService;
 import com.localflow.domain.workspace.config.WorkspaceProperties;
 import com.localflow.domain.workspace.domain.FileCategory;
 import com.localflow.domain.workspace.domain.FileChangeType;
+import com.localflow.domain.workspace.domain.ProjectFileBackup;
 import com.localflow.domain.workspace.dto.CodeSymbolResponse;
 import com.localflow.domain.workspace.dto.FileContentResponse;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
@@ -234,6 +235,44 @@ public class ProjectFileService {
     public Path projectRoot(String projectId) {
         projectService.requireProject(projectId);
         return storageService.projectSourceRoot(projectId);
+    }
+
+    public ProjectFileBackup backup(String projectId, String relativePath) {
+        projectService.requireProject(projectId);
+        String normalized = storageService.normalizeRelativePath(relativePath);
+        ProjectFile file = fileRepository.findByProject_IdAndRelativePath(projectId, normalized)
+                .orElse(null);
+        if (file == null) {
+            return ProjectFileBackup.missing(normalized);
+        }
+        return new ProjectFileBackup(normalized, true,
+                storageService.readBytes(projectId, normalized), file.getTags());
+    }
+
+    @Transactional
+    public void restoreBackups(String projectId, List<ProjectFileBackup> backups) {
+        Project project = projectService.requireProject(projectId);
+        for (ProjectFileBackup backup : backups) {
+            ProjectFile current = fileRepository
+                    .findByProject_IdAndRelativePath(projectId, backup.relativePath())
+                    .orElse(null);
+            if (current != null) {
+                symbolRepository.deleteAllByProjectFile_Id(current.getId());
+                fileRepository.delete(current);
+            }
+            storageService.delete(projectId, backup.relativePath());
+        }
+        fileRepository.flush();
+
+        for (ProjectFileBackup backup : backups) {
+            if (!backup.existed()) continue;
+            Path stored = storageService.writeBytes(projectId, backup.relativePath(), backup.content());
+            ProjectFile restored = saveMetadata(project, null, backup.relativePath(),
+                    fileSize(stored), hash(stored));
+            sourceIndexService.reindex(restored, stored);
+            restored.replaceTags(backup.tags());
+        }
+        fileRepository.flush();
     }
 
     private ProjectSettings settings(String projectId) {
