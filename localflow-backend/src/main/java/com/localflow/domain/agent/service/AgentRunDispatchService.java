@@ -33,6 +33,9 @@ public class AgentRunDispatchService {
                 && previousStatus != AgentRunStatus.WAITING_APPROVAL) {
             throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
         }
+        if (runService.hasOtherActiveRun(projectId, runId)) {
+            throw new CustomException(ErrorCode.AGENT_RUN_ALREADY_ACTIVE);
+        }
         if (previousStatus == AgentRunStatus.WAITING_APPROVAL && !approved) {
             return AgentRunResponse.from(run);
         }

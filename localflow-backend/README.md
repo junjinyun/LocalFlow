@@ -96,10 +96,11 @@ Base64는 암호화가 아니므로 변환 전 JSON과 변환 결과를 모두 �
 ### 에이전트 실행 API
 
 1. `POST /api/projects/{projectId}/agent-runs`로 초안을 만듭니다.
-2. `POST /api/projects/{projectId}/agent-runs/{runId}/execute`와 `{"approved":false}`로 판단·계획 생성을 시작합니다.
-3. 상태가 `WAITING_APPROVAL`이면 계획을 검토한 뒤 같은 API에 `{"approved":true}`를 보내 업로드 사본에 적용합니다.
+2. `POST /api/projects/{projectId}/agent-runs/{runId}/execute`와 `{"approved":false}`로 실행을 등록합니다. API는 `202 Accepted`와 `PENDING` 상태를 즉시 반환하고 실제 AI 작업은 백그라운드에서 계속됩니다.
+3. `GET /api/projects/{projectId}/agent-runs/active`로 탭 이동이나 새로고침 이후에도 실행 중·승인 대기 작업을 복구할 수 있습니다.
+4. 상태가 `WAITING_APPROVAL`이면 계획을 검토한 뒤 같은 실행 API에 `{"approved":true}`를 보내 업로드 사본에 적용합니다.
 
-파일 읽기 정책이 `CONFIRM`이면 계획 생성 전에도 한 번 승인 대기할 수 있습니다. `DENY` 작업은 승인 여부와 관계없이 실행되지 않습니다.
+파일 읽기 정책이 `CONFIRM`이면 계획 생성 전에도 한 번 승인 대기할 수 있습니다. `DENY` 작업은 승인 여부와 관계없이 실행되지 않습니다. MVP에서는 한 프로젝트에 실행 중 또는 승인 대기 작업을 하나만 허용하며, 중복 생성 요청은 `409 Conflict`로 거부합니다.
 
 - 상태 확인: `http://localhost:8080/api/health`
 - Swagger UI: `http://localhost:8080/swagger-ui/index.html`

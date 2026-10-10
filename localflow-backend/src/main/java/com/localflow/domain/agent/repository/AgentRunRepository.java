@@ -15,6 +15,15 @@ public interface AgentRunRepository extends JpaRepository<AgentRun, String> {
     List<AgentRun> findAllByProject_IdOrderByCreatedAtDesc(String projectId);
 
     @EntityGraph(attributePaths = "project")
+    List<AgentRun> findAllByProject_IdAndStatusInOrderByCreatedAtDesc(
+            String projectId, List<AgentRunStatus> statuses);
+
+    boolean existsByProject_IdAndStatusIn(String projectId, List<AgentRunStatus> statuses);
+
+    boolean existsByProject_IdAndStatusInAndIdNot(
+            String projectId, List<AgentRunStatus> statuses, String id);
+
+    @EntityGraph(attributePaths = "project")
     @Query("select run from AgentRun run where run.id = :id")
     Optional<AgentRun> findDetailedById(@Param("id") String id);
 

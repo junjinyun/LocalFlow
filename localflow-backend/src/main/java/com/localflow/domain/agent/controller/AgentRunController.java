@@ -44,6 +44,7 @@ public class AgentRunController {
 
     @Operation(summary = "에이전트 비동기 실행 요청 또는 승인 후 작업 재개")
     @PostMapping("/{runId}/execute")
+    @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<AgentRunResponse> execute(@PathVariable String projectId,
                                                 @PathVariable String runId,
                                                 @RequestBody(required = false) AgentRunExecuteRequest request) {
@@ -68,6 +69,12 @@ public class AgentRunController {
     @GetMapping
     public ApiResponse<List<AgentRunSummaryResponse>> findAll(@PathVariable String projectId) {
         return ApiResponse.success(agentRunService.findAll(projectId));
+    }
+
+    @Operation(summary = "프로젝트의 실행 중 또는 승인 대기 작업 조회")
+    @GetMapping("/active")
+    public ApiResponse<List<AgentRunResponse>> findActive(@PathVariable String projectId) {
+        return ApiResponse.success(agentRunService.findActive(projectId));
     }
 
     @Operation(summary = "에이전트 실행 기록 단건 조회")

@@ -112,6 +112,34 @@ class AgentRunAsyncIntegrationTest {
         }
     }
 
+    @Test
+    void findsActiveRunAndBlocksAnotherDraftInSameProject() {
+        ProjectResponse project = projectService.create(
+                new ProjectCreateRequest("active-run-project", "활성 실행 복구 테스트"));
+        try {
+            AgentRunResponse draft = runService.createDraft(project.id(), new AgentRunCreateRequest(
+                    "오래 실행될 작업",
+                    ExecutionMode.BALANCED,
+                    AiProviderType.OLLAMA));
+            AgentRun run = runRepository.findDetailedById(draft.runId()).orElseThrow();
+            run.queue();
+            runRepository.saveAndFlush(run);
+
+            assertThat(runService.findActive(project.id()))
+                    .extracting(AgentRunResponse::runId)
+                    .containsExactly(draft.runId());
+            assertThatThrownBy(() -> runService.createDraft(project.id(), new AgentRunCreateRequest(
+                    "중복 작업",
+                    ExecutionMode.BALANCED,
+                    AiProviderType.OLLAMA)))
+                    .isInstanceOfSatisfying(CustomException.class,
+                            exception -> assertThat(exception.errorCode())
+                                    .isEqualTo(ErrorCode.AGENT_RUN_ALREADY_ACTIVE));
+        } finally {
+            projectService.delete(project.id());
+        }
+    }
+
     private AgentRunResponse awaitStatus(String projectId, String runId,
                                          AgentRunStatus expected) throws InterruptedException {
         Instant deadline = Instant.now().plus(Duration.ofSeconds(5));

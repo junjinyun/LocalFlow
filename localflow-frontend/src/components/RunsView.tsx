@@ -6,6 +6,8 @@ import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
 
+const pollingStatuses = new Set(['PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING'])
+
 export default function RunsView({ project, notify }: { project: Project; notify: (message: string, tone?: 'success' | 'error') => void }) {
   const [runs, setRuns] = useState<AgentRunSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,6 +34,39 @@ export default function RunsView({ project, notify }: { project: Project; notify
     setSelectedRun(current => current?.runId === updated.runId ? updated : current)
   }
 
+  useEffect(() => {
+    if (!selectedRun || !pollingStatuses.has(selectedRun.status)) return
+    let disposed = false
+    let timer: number | null = null
+    const poll = async () => {
+      try {
+        const [updated, events] = await Promise.all([
+          api.runs.get(project.id, selectedRun.runId),
+          api.runs.progress(project.id, selectedRun.runId),
+        ])
+        if (disposed) return
+        storeRun(updated)
+        setProgress(events)
+        if (pollingStatuses.has(updated.status)) {
+          timer = window.setTimeout(poll, 1000)
+        } else if (updated.status === 'COMPLETED') {
+          notify('AI 작업을 완료했습니다.')
+        } else if (updated.status === 'WAITING_APPROVAL') {
+          notify('파일 작업 전 승인이 필요합니다.')
+        } else if (updated.status === 'FAILED') {
+          notify(updated.errorMessage || 'AI 실행에 실패했습니다.', 'error')
+        }
+      } catch {
+        if (!disposed) timer = window.setTimeout(poll, 1000)
+      }
+    }
+    void poll()
+    return () => {
+      disposed = true
+      if (timer != null) window.clearTimeout(timer)
+    }
+  }, [project.id, selectedRun?.runId, selectedRun?.status])
+
   const cancel = async (runId: string) => {
     try {
       const updated = await api.runs.cancel(project.id, runId)
@@ -44,25 +79,15 @@ export default function RunsView({ project, notify }: { project: Project; notify
 
   const execute = async (runId: string, approved: boolean) => {
     setWorkingId(runId)
-    const refreshProgress = async () => {
-      try { setProgress(await api.runs.progress(project.id, runId)) }
-      catch { /* 실행 중 다음 조회에서 복구한다. */ }
-    }
-    await refreshProgress()
-    const timer = window.setInterval(refreshProgress, 700)
     try {
       const queued = await api.runs.execute(project.id, runId, approved)
       storeRun(queued)
-      const updated = await api.runs.waitForCompletion(project.id, runId, storeRun)
-      await refreshProgress()
-      storeRun(updated)
-      if (updated.status === 'COMPLETED') notify('AI 작업을 완료했습니다.')
-      else if (updated.status === 'WAITING_APPROVAL') notify('파일 작업 전 승인이 필요합니다.')
-      else if (updated.status === 'FAILED') notify(updated.errorMessage || 'AI 실행에 실패했습니다.', 'error')
+      setSelectedRun(queued)
+      setProgress(await api.runs.progress(project.id, runId))
+      notify('AI 작업 실행을 시작했습니다.')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'AI 실행에 실패했습니다.', 'error')
     } finally {
-      window.clearInterval(timer)
       setWorkingId(null)
     }
   }
@@ -177,7 +202,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
 
           {progress.length > 0 && <section className="run-detail-section">
             <h3>에이전트 진행 과정 <span>{progress.length}</span></h3>
-            <AgentProgressTimeline events={progress} active={workingId === selectedRun.runId} />
+            <AgentProgressTimeline events={progress} active={pollingStatuses.has(selectedRun.status)} />
           </section>}
 
           <section className="run-detail-section">

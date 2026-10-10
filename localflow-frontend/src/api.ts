@@ -4,9 +4,6 @@ import type {
 } from './types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
-const TERMINAL_RUN_STATUSES = new Set(['WAITING_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED'])
-
-const wait = (milliseconds: number) => new Promise(resolve => window.setTimeout(resolve, milliseconds))
 
 export class ApiError extends Error {
   code?: string
@@ -124,6 +121,7 @@ export const api = {
   },
   runs: {
     list: (projectId: string) => request<AgentRunSummary[]>(`/api/projects/${projectId}/agent-runs`),
+    active: (projectId: string) => request<AgentRun[]>(`/api/projects/${projectId}/agent-runs/active`),
     get: (projectId: string, runId: string) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}`),
     progress: (projectId: string, runId: string) =>
@@ -140,15 +138,6 @@ export const api = {
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}/execute`, {
         method: 'POST', body: JSON.stringify({ approved }),
       }),
-    waitForCompletion: async (projectId: string, runId: string,
-      onUpdate?: (run: AgentRun) => void) => {
-      while (true) {
-        const run = await request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}`)
-        onUpdate?.(run)
-        if (TERMINAL_RUN_STATUSES.has(run.status)) return run
-        await wait(700)
-      }
-    },
   },
   providers: (refresh = false) => request<Provider[]>(`/api/ai/providers?refresh=${refresh}`),
   health: () => request<{ status: string; service: string }>('/api/health'),
