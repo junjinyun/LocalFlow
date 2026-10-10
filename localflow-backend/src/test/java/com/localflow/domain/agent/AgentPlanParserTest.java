@@ -31,6 +31,31 @@ class AgentPlanParserTest {
     }
 
     @Test
+    void parsesUpdatePlanWithCompleteFileContent() {
+        var plan = parser.parse("""
+                {"summary":"설정 수정","response":"완료","operations":[
+                  {"action":"UPDATE","path":"src/config.yml","destinationPath":null,"content":"enabled: false"}
+                ]}
+                """);
+
+        assertThat(plan.operations()).singleElement().satisfies(operation -> {
+            assertThat(operation.action()).isEqualTo(FileOperationAction.UPDATE);
+            assertThat(operation.path()).isEqualTo("src/config.yml");
+            assertThat(operation.content()).isEqualTo("enabled: false");
+        });
+    }
+
+    @Test
+    void parsesNoChangePlanWithEmptyOperations() {
+        var plan = parser.parse("""
+                {"summary":"변경 불필요","response":"이미 요청 상태입니다.","operations":[]}
+                """);
+
+        assertThat(plan.operations()).isEmpty();
+        assertThat(plan.response()).isEqualTo("이미 요청 상태입니다.");
+    }
+
+    @Test
     void rejectsPlanOverConfiguredOperationLimit() {
         assertThatThrownBy(() -> parser.parse("""
                 {"summary":"too many","response":"no","operations":[

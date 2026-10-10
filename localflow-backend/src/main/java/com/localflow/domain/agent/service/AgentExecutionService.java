@@ -24,6 +24,8 @@ import com.localflow.domain.provider.domain.DecisionResult;
 import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GenerationResult;
 import com.localflow.domain.provider.port.GenerationProvider;
+import com.localflow.domain.provider.service.StructuredGenerationService;
+import com.localflow.domain.provider.service.StructuredGenerationService.ParsedGeneration;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
 import com.localflow.domain.workspace.dto.FileWriteRequest;
 import com.localflow.domain.workspace.domain.FileCategory;
@@ -48,6 +50,8 @@ public class AgentExecutionService {
     private final AgentContextService contextService;
     private final AgentPlanParser planParser;
     private final TaskDecompositionParser decompositionParser;
+    private final AgentOutputSchemas outputSchemas;
+    private final StructuredGenerationService structuredGenerationService;
     private final ProjectSettingsRepository settingsRepository;
     private final ProjectFileRepository fileRepository;
     private final ProjectFileService fileService;
@@ -63,6 +67,8 @@ public class AgentExecutionService {
                                  AgentContextService contextService,
                                  AgentPlanParser planParser,
                                  TaskDecompositionParser decompositionParser,
+                                 AgentOutputSchemas outputSchemas,
+                                 StructuredGenerationService structuredGenerationService,
                                  ProjectSettingsRepository settingsRepository,
                                  ProjectFileRepository fileRepository,
                                  ProjectFileService fileService,
@@ -77,6 +83,8 @@ public class AgentExecutionService {
         this.contextService = contextService;
         this.planParser = planParser;
         this.decompositionParser = decompositionParser;
+        this.outputSchemas = outputSchemas;
+        this.structuredGenerationService = structuredGenerationService;
         this.settingsRepository = settingsRepository;
         this.fileRepository = fileRepository;
         this.fileService = fileService;
@@ -130,8 +138,18 @@ public class AgentExecutionService {
             run.recordDecomposition(decompositionJson, provider.providerType(),
                     decompositionGeneration == null ? selectedModel : decompositionGeneration.model(),
                     decompositionInputTokens, decompositionOutputTokens);
-            progressService.append(projectId, runId, AgentProgressStage.DECOMPOSED,
-                    "요청을 " + decomposition.value().tasks().size() + "개의 작업 단위로 정리했습니다.");
+            if (decomposition.fallbackReason() != null) {
+                progressService.append(projectId, runId, AgentProgressStage.DECOMPOSED,
+                        "AI 구조화 응답을 해석하지 못해 로컬 규칙으로 요청을 "
+                                + decomposition.value().tasks().size() + "개의 작업 단위로 정리했습니다.");
+            } else if (decomposition.attempts() > 1) {
+                progressService.append(projectId, runId, AgentProgressStage.DECOMPOSED,
+                        "구조화 응답을 재시도한 뒤 요청을 "
+                                + decomposition.value().tasks().size() + "개의 작업 단위로 정리했습니다.");
+            } else {
+                progressService.append(projectId, runId, AgentProgressStage.DECOMPOSED,
+                        "요청을 " + decomposition.value().tasks().size() + "개의 작업 단위로 정리했습니다.");
+            }
             progressService.append(projectId, runId, AgentProgressStage.DECIDING,
                     "Jev가 관련 태그, 대상 범위와 작업 위험도를 판단하는 중입니다.");
             DecisionResult decision = decisionService.decide(run.getPrompt(), files,
@@ -155,9 +173,21 @@ public class AgentExecutionService {
             run.startPlanning(provider.providerType());
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
                     "선택한 AI가 코드와 파일 변경 계획을 생성하는 중입니다.");
-            GenerationResult generation = provider.generate(new GenerationRequest(
-                    systemPrompt(), userPrompt(run.getPrompt(), decomposition.value(), decision, context), selectedModel));
-            AgentPlan plan = planParser.parse(generation.text());
+            ParsedGeneration<AgentPlan> planGeneration = structuredGenerationService.generate(
+                    provider,
+                    new GenerationRequest(
+                            systemPrompt(),
+                            userPrompt(run.getPrompt(), decomposition.value(), decision, context),
+                            selectedModel,
+                            outputSchemas.filePlan()),
+                    planParser::parse,
+                    "파일 변경 계획");
+            GenerationResult generation = planGeneration.generation();
+            AgentPlan plan = planGeneration.value();
+            if (planGeneration.attempts() > 1) {
+                progressService.append(projectId, runId, AgentProgressStage.PLANNING,
+                        "파일 변경 계획의 구조화 응답을 재시도하여 정상 형식으로 복구했습니다.");
+            }
             String planJson = planParser.toJson(plan);
             progressService.append(projectId, runId, AgentProgressStage.VALIDATING,
                     "생성된 결과를 검증하고 파일 변경 전후 차이를 계산하는 중입니다.");
@@ -328,10 +358,8 @@ public class AgentExecutionService {
     private String systemPrompt() {
         return """
                 당신은 업로드된 프로젝트 사본을 수정하는 개발 보조 에이전트다.
-                반드시 JSON 객체 하나만 반환하고 마크다운 코드 펜스를 사용하지 마라.
-                스키마: {"summary":"짧은 계획","response":"사용자에게 보여줄 한국어 결과",
-                "operations":[{"action":"CREATE|UPDATE|MOVE|DELETE","path":"상대경로",
-                "destinationPath":"MOVE일 때 상대경로 또는 null","content":"CREATE/UPDATE일 때 파일 전체 내용 또는 null"}]}
+                전달된 파일 변경 계획 JSON Schema와 일치하는 JSON 객체 하나만 반환하라.
+                마크다운 코드 펜스, 설명문, 스키마에 없는 필드는 사용하지 마라.
                 질문에 답하거나 분석만 하면 operations는 빈 배열로 반환한다.
                 UPDATE content에는 일부 패치가 아니라 저장할 파일 전체 내용을 넣는다.
                 제공되지 않은 파일을 추측해서 수정하지 말고, 최소한의 파일만 변경한다.
@@ -345,7 +373,8 @@ public class AgentExecutionService {
                                            GenerationProvider provider, String selectedModel) {
         if (run.getDecompositionJson() != null && !run.getDecompositionJson().isBlank()) {
             try {
-                return new DecompositionOutcome(decompositionParser.parse(run.getDecompositionJson()), null);
+                return new DecompositionOutcome(
+                        decompositionParser.parse(run.getDecompositionJson()), null, 0, null);
             } catch (RuntimeException ignored) {
                 // 저장된 이전 결과가 손상된 경우에만 다시 분해한다.
             }
@@ -354,27 +383,34 @@ public class AgentExecutionService {
                 .distinct().sorted().toList();
         GenerationResult generation = null;
         try {
-            generation = provider.generate(new GenerationRequest(
-                    decompositionSystemPrompt(),
-                    decompositionUserPrompt(run.getPrompt(), contextService.buildDecompositionContext(run.getProject())),
-                    selectedModel));
-            return new DecompositionOutcome(decompositionParser.parse(generation.text()), generation);
+            ParsedGeneration<TaskDecomposition> parsed = structuredGenerationService.generate(
+                    provider,
+                    new GenerationRequest(
+                            decompositionSystemPrompt(),
+                            decompositionUserPrompt(
+                                    run.getPrompt(),
+                                    contextService.buildDecompositionContext(run.getProject())),
+                            selectedModel,
+                            outputSchemas.taskDecomposition()),
+                    decompositionParser::parse,
+                    "작업 분해");
+            generation = parsed.generation();
+            return new DecompositionOutcome(parsed.value(), generation, parsed.attempts(), null);
         } catch (RuntimeException exception) {
             return new DecompositionOutcome(
-                    decompositionParser.fallback(run.getPrompt(), availableTags), generation);
+                    decompositionParser.fallback(run.getPrompt(), availableTags),
+                    generation, 0, structureFailureMessage(exception));
         }
     }
 
     private String decompositionSystemPrompt() {
         return """
                 당신은 개발 요청을 실행하지 않고 작업 단위로 설계하는 분석기다.
-                반드시 JSON 객체 하나만 반환하고 마크다운 코드 펜스를 사용하지 마라.
+                전달된 작업 분해 JSON Schema와 일치하는 JSON 객체 하나만 반환하라.
+                마크다운 코드 펜스, 설명문, 스키마에 없는 필드는 사용하지 마라.
                 최대 5개의 독립 작업으로 의미에 따라 분해하고 원래 수행 순서를 유지한다.
                 코드나 파일 본문을 작성하지 말고, 제공된 프로젝트 태그를 우선 사용한다.
                 단순 요청은 작업 하나로 유지한다.
-                스키마: {"summary":"분해 요약","tasks":[{"id":"task-1",
-                "instruction":"수행할 작업","dependsOn":["선행 작업 id"],
-                "suggestedTags":["관련 태그"],"acceptanceCriteria":["완료 조건"]}]}
                 """;
     }
 
@@ -401,6 +437,17 @@ public class AgentExecutionService {
         return message.length() <= 1800 ? message : message.substring(0, 1800) + "…";
     }
 
-    private record DecompositionOutcome(TaskDecomposition value, GenerationResult generation) {
+    private String structureFailureMessage(RuntimeException exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) return "구조화 응답을 해석하지 못했습니다.";
+        return message.length() <= 500 ? message : message.substring(0, 500) + "…";
+    }
+
+    private record DecompositionOutcome(
+            TaskDecomposition value,
+            GenerationResult generation,
+            int attempts,
+            String fallbackReason
+    ) {
     }
 }

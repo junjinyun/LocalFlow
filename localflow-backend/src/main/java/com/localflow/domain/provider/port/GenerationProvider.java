@@ -12,5 +12,6 @@ public interface GenerationProvider {
     default List<String> models() {
         return model() == null || model().isBlank() ? List.of() : List.of(model());
     }
+    default int structuredOutputRetries() { return 0; }
     GenerationResult generate(GenerationRequest request);
 }
