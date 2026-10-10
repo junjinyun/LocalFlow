@@ -24,7 +24,8 @@ public class AgentRunService {
             AgentRunStatus.PLANNING,
             AgentRunStatus.VALIDATING,
             AgentRunStatus.RUNNING,
-            AgentRunStatus.WAITING_APPROVAL
+            AgentRunStatus.WAITING_APPROVAL,
+            AgentRunStatus.CANCEL_REQUESTED
     );
 
     private final ProjectService projectService;
@@ -70,18 +71,6 @@ public class AgentRunService {
 
     public AgentRunResponse findById(String projectId, String runId) {
         return AgentRunResponse.from(requireRun(projectId, runId));
-    }
-
-    @Transactional
-    public AgentRunResponse cancel(String projectId, String runId) {
-        AgentRun run = requireRun(projectId, runId);
-        if (run.getStatus() != com.localflow.domain.agent.domain.AgentRunStatus.DRAFT
-                && run.getStatus() != com.localflow.domain.agent.domain.AgentRunStatus.PENDING
-                && run.getStatus() != com.localflow.domain.agent.domain.AgentRunStatus.WAITING_APPROVAL) {
-            throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
-        }
-        run.cancel();
-        return AgentRunResponse.from(run);
     }
 
     public AgentRun requireRun(String projectId, String runId) {

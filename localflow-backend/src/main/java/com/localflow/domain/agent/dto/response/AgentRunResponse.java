@@ -28,7 +28,9 @@ public record AgentRunResponse(
         Integer outputTokens,
         Instant createdAt,
         Instant updatedAt,
-        Instant completedAt
+        Instant completedAt,
+        Instant cancelRequestedAt,
+        Instant cancelledAt
 ) {
     public static AgentRunResponse from(AgentRun run) {
         return new AgentRunResponse(run.getId(), run.getProject().getId(), run.getPrompt(),
@@ -37,7 +39,8 @@ public record AgentRunResponse(
                 run.getDecompositionJson(), run.getDecisionJson(), run.getPlanJson(), run.getChangesJson(),
                 run.getInputSnapshotJson(), run.getResultMessage(),
                 run.getErrorMessage(), run.getModel(), run.getInputTokens(), run.getOutputTokens(),
-                run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt());
+                run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt(),
+                run.getCancelRequestedAt(), run.getCancelledAt());
     }
 
     public static String notice(AgentRun run) {
@@ -49,6 +52,7 @@ public record AgentRunResponse(
             case VALIDATING -> "생성된 결과와 파일 변경 내용을 검증하고 있습니다.";
             case RUNNING -> "검증된 파일 변경을 프로젝트 사본에 적용하고 있습니다.";
             case WAITING_APPROVAL -> "파일 작업 적용 전에 사용자 승인을 기다리고 있습니다.";
+            case CANCEL_REQUESTED -> "취소 요청을 확인하고 실행 결과를 폐기하는 중입니다.";
             case COMPLETED -> "AI 작업이 완료되었습니다.";
             case FAILED -> "AI 작업이 실패했습니다.";
             case CANCELLED -> "사용자가 실행을 취소했습니다.";

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, CornerDownLeft, Info, LoaderCircle, MessageSquare, Send, Trash2, UserRound } from 'lucide-react'
+import { Ban, Bot, CornerDownLeft, Info, LoaderCircle, MessageSquare, Send, Trash2, UserRound } from 'lucide-react'
 import { api } from '../api'
 import type { AgentRunProgress, ChatMessage, ExecutionMode, PrivacyMode, Project, Provider, ProviderType } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
@@ -14,7 +14,7 @@ type Props = {
 const typeLabels: Record<ChatMessage['type'], string> = {
   PROMPT: '프롬프트', HANDOFF: '인수인계', NOTE: '메모', SYSTEM: '시스템',
 }
-const pollingStatuses = new Set(['PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING'])
+const pollingStatuses = new Set(['PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING', 'CANCEL_REQUESTED'])
 const blockingStatuses = new Set([...pollingStatuses, 'WAITING_APPROVAL'])
 
 export default function ChatView({ project, providers, notify }: Props) {
@@ -122,6 +122,8 @@ export default function ChatView({ project, providers, notify }: Props) {
             notify('계획을 만들었습니다. 실행 기록에서 승인해 주세요.')
           } else if (run.status === 'FAILED') {
             notify(run.errorMessage || 'AI 실행에 실패했습니다.', 'error')
+          } else if (run.status === 'CANCELLED') {
+            notify('AI 작업을 취소했습니다.')
           }
         }
         return false
@@ -213,6 +215,21 @@ export default function ChatView({ project, providers, notify }: Props) {
     }
   }
 
+  const cancelActiveRun = async () => {
+    if (!activeRunId) return
+    setSending(true)
+    try {
+      const updated = await api.runs.cancel(project.id, activeRunId)
+      setActiveRunStatus(updated.status)
+      await refreshProgress(activeRunId)
+      notify(updated.status === 'CANCELLED' ? 'AI 작업을 취소했습니다.' : '취소를 요청했습니다.')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '실행 취소에 실패했습니다.', 'error')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <section className="chat-layout">
       <div className="chat-main panel">
@@ -233,7 +250,7 @@ export default function ChatView({ project, providers, notify }: Props) {
           {activeProgress.length > 0 && <article className="message-card agent-activity-card">
             <span className="message-avatar"><Bot size={16} /></span>
             <div>
-              <header><strong>AI 에이전트</strong><span className={`agent-activity-status ${activeRunStatus?.toLowerCase() ?? ''}`}>{pollingStatuses.has(activeRunStatus ?? '') ? '작업 중' : activeRunStatus === 'WAITING_APPROVAL' ? '승인 대기' : activeRunStatus === 'FAILED' ? '실패' : activeRunStatus === 'COMPLETED' ? '완료' : '진행 기록'}</span></header>
+              <header><strong>AI 에이전트</strong><span className={`agent-activity-status ${activeRunStatus?.toLowerCase() ?? ''}`}>{activeRunStatus === 'CANCEL_REQUESTED' ? '취소 중' : pollingStatuses.has(activeRunStatus ?? '') ? '작업 중' : activeRunStatus === 'WAITING_APPROVAL' ? '승인 대기' : activeRunStatus === 'FAILED' ? '실패' : activeRunStatus === 'CANCELLED' ? '취소됨' : activeRunStatus === 'COMPLETED' ? '완료' : '진행 기록'}</span></header>
               <AgentProgressTimeline events={activeProgress} active={pollingStatuses.has(activeRunStatus ?? '')} />
             </div>
           </article>}
@@ -258,6 +275,7 @@ export default function ChatView({ project, providers, notify }: Props) {
         {privacyBlocked && <div className="side-note warning"><Info size={17} /><div><strong>로컬 전용 설정</strong><p>외부 AI를 실행하려면 설정 탭에서 개인정보 모드를 외부 AI 전송 허용으로 변경해야 합니다.</p></div></div>}
         {selectedProvider && !selectedProvider.available && <div className="side-note warning"><Info size={17} /><div><strong>{selectedProvider.displayName}을 사용할 수 없습니다.</strong><p>{selectedProvider.statusMessage}</p></div></div>}
         {runBlocksExecution && <div className="side-note"><Info size={17} /><div><strong>진행 중인 작업이 있습니다.</strong><p>다른 탭을 다녀오거나 화면을 새로고침해도 백엔드 실행 상태와 진행 기록을 계속 조회합니다.</p></div></div>}
+        {activeRunId && activeRunStatus && !['CANCEL_REQUESTED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(activeRunStatus) && <button className="secondary-button danger-text" disabled={sending} onClick={cancelActiveRun}><Ban size={15} />실행 취소</button>}
         <div className="form-stack compact-form">
           <label>실행 모드<select value={executionMode} onChange={event => setExecutionMode(event.target.value as ExecutionMode)}><option value="CONFIRM_EVERY_STEP">매 단계 확인</option><option value="BALANCED">균형 모드</option><option value="AUTONOMOUS">자율 실행</option></select></label>
           <label>생성 AI<select value={provider} onChange={event => setProvider(event.target.value as ProviderType)}>{generationProviders.map(item => <option key={item.type} value={item.type} disabled={!item.available}>{item.displayName}{providerUnavailableLabel(item)}</option>)}</select></label>

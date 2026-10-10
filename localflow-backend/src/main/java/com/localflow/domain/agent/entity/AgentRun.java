@@ -81,6 +81,10 @@ public class AgentRun {
 
     private Instant completedAt;
 
+    private Instant cancelRequestedAt;
+
+    private Instant cancelledAt;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -106,9 +110,22 @@ public class AgentRun {
         return run;
     }
 
+    public void requestCancellation() {
+        if (this.cancelRequestedAt == null) {
+            this.cancelRequestedAt = Instant.now();
+        }
+        this.status = AgentRunStatus.CANCEL_REQUESTED;
+        touch();
+    }
+
     public void cancel() {
+        if (this.cancelRequestedAt == null) {
+            this.cancelRequestedAt = Instant.now();
+        }
         this.status = AgentRunStatus.CANCELLED;
-        this.updatedAt = Instant.now();
+        this.cancelledAt = Instant.now();
+        this.completedAt = this.cancelledAt;
+        touch();
     }
 
     public void queue() {
@@ -217,4 +234,6 @@ public class AgentRun {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getCompletedAt() { return completedAt; }
+    public Instant getCancelRequestedAt() { return cancelRequestedAt; }
+    public Instant getCancelledAt() { return cancelledAt; }
 }

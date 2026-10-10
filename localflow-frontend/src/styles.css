@@ -263,6 +263,7 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .run-status { padding: 4px 7px; color: #626960; background: #eceee9; border-radius: 4px; font: 10px 'DM Mono', monospace; }
 .run-status.draft { color: #725e34; background: #f4eddd; }
 .run-status.cancelled { color: #8b5b56; background: #f5e9e7; }
+.run-status.cancel_requested { color: #8b6a3f; background: #f6eddc; }
 .run-status.completed { color: #4f714b; background: #e7f1e4; }
 .run-status.failed { color: #98524b; background: #f8e8e6; }
 .run-status.waiting_approval { color: #7a6228; background: #f6edcf; }
