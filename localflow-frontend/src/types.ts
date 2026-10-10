@@ -63,7 +63,7 @@ export type ProjectMemory = {
   active: boolean; createdAt: string; updatedAt: string
 }
 
-export type ProviderType = 'JEV' | 'OPENAI' | 'VERTEX_AI' | 'OLLAMA'
+export type ProviderType = 'JEV' | 'OPENAI' | 'VERTEX_AI' | 'OLLAMA' | 'GEMINI_CLI'
 export type Provider = {
   type: ProviderType; role: 'DECISION' | 'GENERATION'; displayName: string; credentialType: string
   implemented: boolean; configured: boolean; reachable: boolean | null; modelInstalled: boolean | null

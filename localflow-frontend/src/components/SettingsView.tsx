@@ -88,6 +88,9 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
     if (provider.type === 'OLLAMA' && provider.reachable && !provider.modelInstalled) {
       return { label: '모델 없음', tone: 'warning' }
     }
+    if (provider.type === 'GEMINI_CLI' && provider.configured && !provider.reachable) {
+      return { label: 'CLI 실행 불가', tone: 'error' }
+    }
     return { label: '환경 설정 필요', tone: '' }
   }
 

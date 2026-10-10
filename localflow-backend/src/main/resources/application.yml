@@ -101,3 +101,14 @@ localflow:
       location: ${VERTEX_AI_LOCATION:us-central1}
       model: ${VERTEX_AI_MODEL:gemini-2.5-flash}
       models: ${VERTEX_AI_MODELS:gemini-2.5-flash,gemini-2.5-pro,gemini-2.5-flash-lite}
+    gemini-cli:
+      enabled: ${GEMINI_CLI_ENABLED:false}
+      command: ${GEMINI_CLI_COMMAND:gemini}
+      model: ${GEMINI_CLI_MODEL:auto}
+      models: ${GEMINI_CLI_MODELS:auto}
+      status-cache-ttl: ${GEMINI_CLI_STATUS_CACHE_TTL:10s}
+      status-timeout: ${GEMINI_CLI_STATUS_TIMEOUT:5s}
+      request-timeout: ${GEMINI_CLI_REQUEST_TIMEOUT:10m}
+      queue-timeout: ${GEMINI_CLI_QUEUE_TIMEOUT:15m}
+      max-concurrent-requests: ${GEMINI_CLI_MAX_CONCURRENT_REQUESTS:1}
+      structured-output-retries: ${GEMINI_CLI_STRUCTURED_OUTPUT_RETRIES:1}

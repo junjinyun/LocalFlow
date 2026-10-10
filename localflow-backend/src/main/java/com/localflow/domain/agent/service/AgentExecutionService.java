@@ -272,7 +272,8 @@ public class AgentExecutionService {
             }
             return selected;
         }
-        for (AiProviderType type : List.of(AiProviderType.OLLAMA, AiProviderType.OPENAI, AiProviderType.VERTEX_AI)) {
+        for (AiProviderType type : List.of(AiProviderType.OLLAMA, AiProviderType.GEMINI_CLI,
+                AiProviderType.OPENAI, AiProviderType.VERTEX_AI)) {
             GenerationProvider candidate = providers.get(type);
             if (candidate != null && candidate.available()) return candidate;
         }

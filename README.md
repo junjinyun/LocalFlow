@@ -146,6 +146,7 @@ npm run dev
 | OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` | 모델 목록은 `OPENAI_MODELS`로 변경 |
 | Vertex AI | `VERTEX_AI_SERVICE_ACCOUNT_BASE64`, `VERTEX_AI_PROJECT` | 서비스 계정 JSON 전체를 Base64로 입력 |
 | Ollama | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_PROBE_MODEL`, `OLLAMA_NUM_CTX` | 3B 호출 점검과 4B 실제 작업을 분리, API 키 불필요 |
+| Gemini CLI | `GEMINI_CLI_ENABLED`, `GEMINI_CLI_COMMAND` | 공식 CLI와 개인 Google 계정 로그인 사용, API 키 불필요 |
 | Jev/OpenRouter | `OPENROUTER_API_KEY`, `JEV_MODEL` | 미설정 시 로컬 판단 사용 |
 
 API 키, 실제 `.env`, 서비스 계정 JSON과 Base64 값은 커밋하지 않습니다.
@@ -153,9 +154,9 @@ API 키, 실제 `.env`, 서비스 계정 JSON과 Base64 값은 커밋하지 않�
 ## 개인정보 및 권한
 
 - 업로드된 프로젝트 사본만 수정하며 사용자 PC의 원본 파일에 직접 접근하지 않습니다.
-- 기본 개인정보 모드는 `LOCAL_ONLY`이며 Ollama만 실행할 수 있습니다.
+- 기본 개인정보 모드는 `LOCAL_ONLY`이며 Ollama만 실행할 수 있습니다. Gemini CLI는 로컬 프로세스지만 프로젝트 문맥을 Google 서비스로 전송하므로 외부 AI로 분류합니다.
 - `LOCAL_ONLY`에서는 `localhost`, `127.0.0.0/8`, `::1` 주소만 허용하며 Ollama Cloud 모델은 차단합니다.
-- OpenAI, Vertex AI 또는 Jev를 사용하려면 프로젝트 설정에서 외부 AI 전송을 허용해야 합니다.
+- OpenAI, Vertex AI, Gemini CLI 또는 Jev를 사용하려면 프로젝트 설정에서 외부 AI 전송을 허용해야 합니다.
 - 읽기, 생성, 수정, 이동, 삭제 권한은 `허용`, `확인`, `거부`로 설정할 수 있습니다.
 - 승인 대기 화면에서 변경 전후 내용을 확인한 뒤 적용할 수 있습니다.
 
