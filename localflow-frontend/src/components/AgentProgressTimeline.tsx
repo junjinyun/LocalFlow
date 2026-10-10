@@ -11,7 +11,7 @@ export default function AgentProgressTimeline({ events, active = false }: Props)
     <ol className="agent-progress-list">
       {events.map((event, index) => {
         const current = active && index === events.length - 1
-        const failed = event.stage === 'FAILED'
+        const failed = event.stage === 'FAILED' || event.stage === 'RECOVERY_REQUIRED'
         const cancelled = event.stage === 'CANCELLED'
         const waiting = event.stage === 'WAITING_APPROVAL'
         const completed = event.stage === 'COMPLETED' || (!current && !failed && !cancelled && !waiting)

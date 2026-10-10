@@ -21,6 +21,7 @@ public record AgentRunResponse(
         String planJson,
         String changesJson,
         String inputSnapshotJson,
+        String applicationResultJson,
         String resultMessage,
         String errorMessage,
         String model,
@@ -37,7 +38,7 @@ public record AgentRunResponse(
                 run.getExecutionMode(), run.getPreferredGenerationProvider(),
                 run.getPreferredModel(), run.getActualGenerationProvider(), run.getStatus(), notice(run),
                 run.getDecompositionJson(), run.getDecisionJson(), run.getPlanJson(), run.getChangesJson(),
-                run.getInputSnapshotJson(), run.getResultMessage(),
+                run.getInputSnapshotJson(), run.getApplicationResultJson(), run.getResultMessage(),
                 run.getErrorMessage(), run.getModel(), run.getInputTokens(), run.getOutputTokens(),
                 run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt(),
                 run.getCancelRequestedAt(), run.getCancelledAt());
@@ -56,6 +57,7 @@ public record AgentRunResponse(
             case COMPLETED -> "AI 작업이 완료되었습니다.";
             case FAILED -> "AI 작업이 실패했습니다.";
             case CANCELLED -> "사용자가 실행을 취소했습니다.";
+            case RECOVERY_REQUIRED -> "일부 파일을 자동 복구하지 못했습니다. 수동 확인이 필요합니다.";
             default -> "AI 작업을 처리하고 있습니다.";
         };
     }

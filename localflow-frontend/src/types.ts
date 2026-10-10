@@ -89,6 +89,14 @@ export type AgentInputSnapshot = {
   userPrompt: string
 }
 export type AgentPlan = { summary: string; response: string; operations: FileOperation[] }
+export type AgentApplyResult = {
+  success: boolean
+  appliedOperations: number
+  rollbackAttempted: boolean
+  rollbackSuccessful: boolean
+  recoveryRequiredPaths: string[]
+  errorMessage: string | null
+}
 export type TaskDecomposition = {
   summary: string
   source: 'AI' | 'LOCAL_FALLBACK' | string
@@ -118,6 +126,7 @@ export type AgentRun = {
   status: string; notice: string; decisionJson: string | null; planJson: string | null; changesJson: string | null
   decompositionJson: string | null
   inputSnapshotJson: string | null
+  applicationResultJson: string | null
   resultMessage: string | null; errorMessage: string | null; model: string | null
   inputTokens: number | null; outputTokens: number | null
   createdAt: string; updatedAt: string; completedAt: string | null
@@ -128,7 +137,7 @@ export type AgentProgressStage =
   | 'PREPARING' | 'DECOMPOSING' | 'DECOMPOSED' | 'DECIDING'
   | 'SELECTING_CONTEXT' | 'PLANNING' | 'VALIDATING'
   | 'WAITING_APPROVAL' | 'APPLYING' | 'COMPLETED' | 'FAILED'
-  | 'CANCELLATION_REQUESTED' | 'CANCELLED'
+  | 'CANCELLATION_REQUESTED' | 'CANCELLED' | 'ROLLED_BACK' | 'RECOVERY_REQUIRED'
 
 export type AgentRunProgress = {
   id: number

@@ -82,6 +82,29 @@ public class WorkspaceStorageService {
         }
     }
 
+    public byte[] readBytes(String projectId, String relativePath) {
+        Path source = resolveProjectFile(projectId, relativePath);
+        if (!Files.isRegularFile(source)) {
+            throw new CustomException(ErrorCode.PROJECT_FILE_NOT_FOUND);
+        }
+        try {
+            return Files.readAllBytes(source);
+        } catch (IOException exception) {
+            throw new IllegalStateException("파일을 읽지 못했습니다: " + relativePath, exception);
+        }
+    }
+
+    public Path writeBytes(String projectId, String relativePath, byte[] content) {
+        Path target = resolveProjectFile(projectId, relativePath);
+        try {
+            Files.createDirectories(target.getParent());
+            Files.write(target, content == null ? new byte[0] : content);
+            return target;
+        } catch (IOException exception) {
+            throw new IllegalStateException("파일 복구에 실패했습니다: " + relativePath, exception);
+        }
+    }
+
     public Resource resource(String projectId, String relativePath) {
         Path source = resolveProjectFile(projectId, relativePath);
         if (!Files.isRegularFile(source)) {
