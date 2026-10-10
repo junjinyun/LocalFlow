@@ -34,7 +34,7 @@ export default function ChatView({ project, providers, notify }: Props) {
   const selectableModels = selectedProvider?.models?.length
     ? selectedProvider.models
     : selectedProvider?.model ? [selectedProvider.model] : []
-  const modelSelectable = provider === 'OPENAI' || provider === 'VERTEX_AI' || provider === 'OLLAMA'
+  const modelSelectable = provider === 'OPENAI' || provider === 'VERTEX_AI' || provider === 'OLLAMA' || provider === 'GEMINI_CLI'
   const privacyBlocked = privacyMode === 'LOCAL_ONLY' && provider !== '' && provider !== 'OLLAMA'
   const modelValid = !modelSelectable || Boolean(model && selectableModels.includes(model))
   const canExecute = Boolean(selectedProvider?.available) && !privacyBlocked && modelValid
@@ -43,6 +43,7 @@ export default function ChatView({ project, providers, notify }: Props) {
     if (item.available) return ''
     if (item.type === 'OLLAMA' && item.configured && !item.reachable) return ' · 서버 연결 실패'
     if (item.type === 'OLLAMA' && item.reachable && !item.modelInstalled) return ' · 모델 없음'
+    if (item.type === 'GEMINI_CLI' && item.configured && !item.reachable) return ' · CLI 실행 불가'
     return ' · 환경 설정 필요'
   }
 

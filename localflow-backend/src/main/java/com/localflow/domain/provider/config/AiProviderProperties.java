@@ -13,8 +13,15 @@ public record AiProviderProperties(
         OpenAi openai,
         Jev jev,
         Ollama ollama,
-        VertexAi vertexAi
+        VertexAi vertexAi,
+        GeminiCli geminiCli
 ) {
+    public AiProviderProperties(int contextMaxChars, int maxOperations,
+                                OpenAi openai, Jev jev, Ollama ollama, VertexAi vertexAi) {
+        this(contextMaxChars, maxOperations, openai, jev, ollama, vertexAi, null);
+    }
+
+    @ConstructorBinding
     public AiProviderProperties {
         contextMaxChars = contextMaxChars <= 0 ? 32_000 : contextMaxChars;
         maxOperations = maxOperations <= 0 ? 20 : maxOperations;
@@ -106,6 +113,33 @@ public record AiProviderProperties(
                     && projectId != null && !projectId.isBlank();
         }
         public List<String> selectableModels() { return mergeModels(model, models); }
+    }
+
+    public record GeminiCli(boolean enabled, String command, String model, List<String> models,
+                            Duration statusCacheTtl, Duration statusTimeout,
+                            Duration requestTimeout, Duration queueTimeout,
+                            int maxConcurrentRequests, int structuredOutputRetries) {
+        @ConstructorBinding
+        public GeminiCli {
+            command = command == null || command.isBlank() ? "gemini" : command.strip();
+            model = model == null || model.isBlank() ? "auto" : model.strip();
+            statusCacheTtl = positive(statusCacheTtl, Duration.ofSeconds(10));
+            statusTimeout = positive(statusTimeout, Duration.ofSeconds(5));
+            requestTimeout = positive(requestTimeout, Duration.ofMinutes(10));
+            queueTimeout = positive(queueTimeout, Duration.ofMinutes(15));
+            maxConcurrentRequests = Math.max(1, Math.min(maxConcurrentRequests, 4));
+            structuredOutputRetries = Math.max(0, Math.min(structuredOutputRetries, 2));
+        }
+
+        public boolean configured() {
+            return enabled && command != null && !command.isBlank();
+        }
+
+        public List<String> selectableModels() { return mergeModels(model, models); }
+    }
+
+    private static Duration positive(Duration value, Duration fallback) {
+        return value == null || value.isNegative() || value.isZero() ? fallback : value;
     }
 
     private static List<String> mergeModels(String defaultModel, List<String> configuredModels) {

@@ -19,7 +19,7 @@ LocalFlow AI의 Spring Boot 백엔드입니다.
 - 텍스트 파일 생성·수정·이동·삭제 및 작업 완료 ZIP 다운로드
 - 프로젝트별 프롬프트/인수인계 기록과 명시적 기억 CRUD
 - OpenRouter의 TypeSafe Jev 또는 로컬 휴리스틱을 이용한 작업 유형·대상 파일·위험도 판단
-- OpenAI Responses API, Google Vertex AI Gemini, 로컬 Ollama 중 선택 실행
+- OpenAI Responses API, Google Vertex AI Gemini, 공식 Gemini CLI, 로컬 Ollama 중 선택 실행
 - AI JSON 계획 검증, 사용자 승인 대기, 업로드된 작업 사본에 파일 생성·수정·이동·삭제 적용
 - 제공자·모델·입출력 토큰·결과·오류가 포함된 실행 기록
 - Swagger/OpenAPI, 공통 응답·예외 처리, 로컬 H2 파일 DB
@@ -71,10 +71,29 @@ $env:OLLAMA_REQUEST_TIMEOUT='10m'
 $env:OLLAMA_QUEUE_TIMEOUT='15m'
 $env:OLLAMA_MAX_CONCURRENT_REQUESTS='1'
 
+# 공식 Gemini CLI (개인 Google 계정으로 gemini 명령에서 먼저 로그인)
+$env:GEMINI_CLI_ENABLED='true'
+$env:GEMINI_CLI_COMMAND='gemini'
+$env:GEMINI_CLI_MODEL='auto'
+$env:GEMINI_CLI_REQUEST_TIMEOUT='10m'
+$env:GEMINI_CLI_MAX_CONCURRENT_REQUESTS='1'
+
 .\gradlew.bat bootRun
 ```
 
-`OPENAI_BASE_URL`, `JEV_BASE_URL`도 호환 서버를 사용할 때 재정의할 수 있습니다. Jev 판단은 OpenRouter Decisions API를 사용하며 모델 ID는 `typesafe/jev-1.13`입니다. 기본 개인정보 모드는 `LOCAL_ONLY`이므로 OpenAI·Vertex AI·Jev를 사용하려면 프로젝트 설정에서 `EXTERNAL_ALLOWED`로 바꿔야 합니다. 로컬 전용에서는 `localhost`, `127.0.0.0/8`, `::1` Ollama 주소만 허용하고 `:cloud`, `*-cloud` 계열 모델을 차단합니다.
+`OPENAI_BASE_URL`, `JEV_BASE_URL`도 호환 서버를 사용할 때 재정의할 수 있습니다. Jev 판단은 OpenRouter Decisions API를 사용하며 모델 ID는 `typesafe/jev-1.13`입니다. 기본 개인정보 모드는 `LOCAL_ONLY`이므로 OpenAI·Vertex AI·Gemini CLI·Jev를 사용하려면 프로젝트 설정에서 `EXTERNAL_ALLOWED`로 바꿔야 합니다. 로컬 전용에서는 `localhost`, `127.0.0.0/8`, `::1` Ollama 주소만 허용하고 `:cloud`, `*-cloud` 계열 모델을 차단합니다.
+
+#### Gemini CLI 준비
+
+Gemini CLI 연동은 Google AI Plus를 API 키로 변환하지 않습니다. 사용자 PC에 설치된 공식 `gemini` 프로세스를 실행하며 인증 정보는 Gemini CLI가 직접 관리합니다. LocalFlow는 OAuth 토큰을 읽거나 저장하지 않으며, CLI 자식 프로세스에는 다른 AI API 키와 서비스 계정 환경 변수를 전달하지 않습니다.
+
+1. Node.js 설치 후 `npm install -g @google/gemini-cli@latest`를 실행합니다.
+2. 터미널에서 `gemini`를 실행하고 학생 혜택을 신청한 개인 Google 계정으로 로그인합니다.
+3. `gemini --prompt "응답 테스트" --output-format json`으로 Headless 호출을 확인합니다.
+4. `.env`에서 `GEMINI_CLI_ENABLED=true`로 바꾸고 백엔드를 다시 시작합니다.
+5. 프로젝트 개인정보 모드를 `EXTERNAL_ALLOWED`로 변경한 뒤 생성 AI에서 `Gemini CLI (Google 계정)`를 선택합니다.
+
+기본 모델 `auto`는 CLI의 자동 라우팅을 사용합니다. CLI는 시스템 임시 디렉터리에서 `plan` 승인 모드로 실행되므로 업로드 작업공간을 직접 수정하지 않습니다. 응답으로 받은 JSON 계획은 기존 LocalFlow 검증·변경 미리보기·사용자 승인 과정을 거쳐 적용됩니다. Google AI Plus는 현재 Gemini CLI의 구독 상향 한도 대상이 아니므로 개인 무료 CLI 한도가 적용되며, Gemini API와 Vertex AI 사용료는 별도입니다.
 
 Ollama는 역할별로 두 모델을 사용합니다. `OLLAMA_PROBE_MODEL`은 AI 제공자 상태를 수동 새로고침할 때 짧은 실제 요청으로 호출 경로와 오류 여부를 점검하고, `OLLAMA_MODEL`은 프롬프트 분해와 파일 작업 결과를 생성합니다. 기본값은 각각 `qwen2.5-coder:3b`, `qwen3.5:4b-q4_K_M`입니다.
 

@@ -42,7 +42,7 @@ VITE_API_BASE_URL=http://localhost:8080
 - 활성 기억만 조회하는 서버 필터
 - 실행 모드, 개인정보 모드, 파일 작업별 권한 설정
 - AI 제공자 환경 설정 상태 표시
-- OpenAI·Vertex AI·Ollama 실행 요청
+- OpenAI·Vertex AI·Gemini CLI·Ollama 실행 요청
 - Jev/로컬 판단 결과에 따른 실행 계획 생성, 승인 및 파일 적용
 - 실행 결과·오류·대상 파일 작업·토큰 사용량 조회와 취소
 - Jev 판단 유형·대상 파일·위험도 표시 및 실행 단건 상태 재조회
