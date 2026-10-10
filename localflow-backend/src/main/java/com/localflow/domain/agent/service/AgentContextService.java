@@ -59,9 +59,11 @@ public class AgentContextService {
         return context.substring(0, Math.min(context.length(), properties.contextMaxChars()));
     }
 
-    public String build(Project project, String prompt, DecisionResult decision, boolean includeContents) {
+    public ContextSnapshot buildSnapshot(Project project, String prompt,
+                                         DecisionResult decision, boolean includeContents) {
         List<ProjectFile> files = files(project.getId());
         StringBuilder context = new StringBuilder();
+        List<String> contextFiles = new ArrayList<>();
         append(context, "프로젝트", project.getName() + "\n설명: " + nullable(project.getDescription()));
         append(context, "활성 프로젝트 기억", memories(project.getId()));
         append(context, "최근 대화", recentMessages(project.getId()));
@@ -77,9 +79,15 @@ public class AgentContextService {
                 if (remaining <= 100) break;
                 if (content.length() > remaining) content = content.substring(0, remaining) + "\n[잘림]";
                 append(context, "파일: " + file.getRelativePath(), content);
+                contextFiles.add(file.getRelativePath());
             }
         }
-        return context.substring(0, Math.min(context.length(), properties.contextMaxChars()));
+        String value = context.substring(0, Math.min(context.length(), properties.contextMaxChars()));
+        return new ContextSnapshot(value, contextFiles);
+    }
+
+    public String build(Project project, String prompt, DecisionResult decision, boolean includeContents) {
+        return buildSnapshot(project, prompt, decision, includeContents).content();
     }
 
     private List<ProjectFile> select(List<ProjectFile> files, String prompt, DecisionResult decision) {
@@ -163,4 +171,10 @@ public class AgentContextService {
 
     private String nullable(String value) { return value == null || value.isBlank() ? "(없음)" : value; }
     private String abbreviate(String value, int max) { return value.length() <= max ? value : value.substring(0, max) + "…"; }
+
+    public record ContextSnapshot(String content, List<String> files) {
+        public ContextSnapshot {
+            files = files == null ? List.of() : List.copyOf(files);
+        }
+    }
 }

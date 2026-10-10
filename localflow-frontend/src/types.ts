@@ -83,6 +83,11 @@ export type AgentFileChangeSnapshot = {
   beforeContent: string | null
   afterContent: string | null
 }
+export type AgentInputSnapshot = {
+  contextFiles: string[]
+  systemPrompt: string
+  userPrompt: string
+}
 export type AgentPlan = { summary: string; response: string; operations: FileOperation[] }
 export type TaskDecomposition = {
   summary: string
@@ -112,6 +117,7 @@ export type AgentRun = {
   actualGenerationProvider: ProviderType | null
   status: string; notice: string; decisionJson: string | null; planJson: string | null; changesJson: string | null
   decompositionJson: string | null
+  inputSnapshotJson: string | null
   resultMessage: string | null; errorMessage: string | null; model: string | null
   inputTokens: number | null; outputTokens: number | null
   createdAt: string; updatedAt: string; completedAt: string | null
