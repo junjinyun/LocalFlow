@@ -66,7 +66,7 @@ localflow:
       - vendor
       - venv
   ai:
-    context-max-chars: ${AI_CONTEXT_MAX_CHARS:60000}
+    context-max-chars: ${AI_CONTEXT_MAX_CHARS:32000}
     max-operations: ${AI_MAX_OPERATIONS:20}
     openai:
       api-key: ${OPENAI_API_KEY:}
@@ -81,14 +81,19 @@ localflow:
     ollama:
       enabled: ${OLLAMA_ENABLED:false}
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      model: ${OLLAMA_MODEL:qwen2.5-coder:3b}
+      model: ${OLLAMA_MODEL:qwen3.5:4b-q4_K_M}
+      probe-model: ${OLLAMA_PROBE_MODEL:qwen2.5-coder:3b}
       status-cache-ttl: ${OLLAMA_STATUS_CACHE_TTL:5s}
       status-timeout: ${OLLAMA_STATUS_TIMEOUT:2s}
       temperature: ${OLLAMA_TEMPERATURE:0}
       seed: ${OLLAMA_SEED:42}
       think: ${OLLAMA_THINK:false}
       num-predict: ${OLLAMA_NUM_PREDICT:4096}
+      num-ctx: ${OLLAMA_NUM_CTX:8192}
       keep-alive: ${OLLAMA_KEEP_ALIVE:10m}
+      request-timeout: ${OLLAMA_REQUEST_TIMEOUT:10m}
+      queue-timeout: ${OLLAMA_QUEUE_TIMEOUT:15m}
+      max-concurrent-requests: ${OLLAMA_MAX_CONCURRENT_REQUESTS:1}
       structured-output-retries: ${OLLAMA_STRUCTURED_OUTPUT_RETRIES:1}
     vertex-ai:
       credentials-base64: ${VERTEX_AI_SERVICE_ACCOUNT_BASE64:}

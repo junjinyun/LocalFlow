@@ -1,4 +1,8 @@
-# Ollama Local LLM Backend
+# Ollama Local LLM Backend (레거시)
+
+> 이 디렉터리는 초기 연동 실험 기록입니다. 현재 LocalFlow 서비스는
+> `localflow-backend`의 Spring Boot Ollama 구현을 사용하며, 이 FastAPI 서버는
+> 실행·배포 대상이 아닙니다.
 
 This FastAPI backend receives a string from a frontend, sends it to the local
 Ollama `exaone3.5:2.4b` model, and returns the generated text as JSON. It does
@@ -74,4 +78,3 @@ console.log(data.result);
 
 CORS allows all origins for local development. Before deployment, restrict
 `allow_origins` in `main.py` to the actual frontend origin.
-

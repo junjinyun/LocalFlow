@@ -22,6 +22,7 @@ import org.hibernate.annotations.OnDeleteAction;
         @Index(name = "idx_agent_run_progress_run_id", columnList = "run_id")
 })
 public class AgentRunProgressEvent {
+    private static final int MAX_MESSAGE_LENGTH = 500;
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -48,7 +49,12 @@ public class AgentRunProgressEvent {
         AgentRunProgressEvent event = new AgentRunProgressEvent();
         event.run = run;
         event.stage = stage;
-        event.message = message;
+        if (message == null || message.isBlank()) {
+            event.message = "진행 상태가 갱신되었습니다.";
+        } else {
+            event.message = message.length() <= MAX_MESSAGE_LENGTH
+                    ? message : message.substring(0, MAX_MESSAGE_LENGTH - 1) + "…";
+        }
         event.createdAt = Instant.now();
         return event;
     }

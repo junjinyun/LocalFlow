@@ -19,6 +19,8 @@ public enum ErrorCode {
     PROVIDER_NOT_CONFIGURED(HttpStatus.BAD_REQUEST, "선택한 AI 제공자의 환경 변수가 설정되지 않았습니다."),
     AI_MODEL_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "선택한 AI 모델은 현재 제공자에서 허용되지 않습니다."),
     EXTERNAL_PROVIDER_DENIED(HttpStatus.FORBIDDEN, "로컬 전용 개인정보 설정에서는 외부 AI를 사용할 수 없습니다."),
+    REMOTE_OLLAMA_DENIED(HttpStatus.FORBIDDEN,
+            "로컬 전용 개인정보 설정에서는 loopback Ollama 주소와 로컬 모델만 사용할 수 있습니다."),
     INVALID_AI_PLAN(HttpStatus.BAD_GATEWAY, "AI가 반환한 파일 작업 계획 형식이 올바르지 않습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다.");

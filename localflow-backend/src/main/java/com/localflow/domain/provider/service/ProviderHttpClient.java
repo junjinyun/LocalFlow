@@ -25,8 +25,13 @@ public class ProviderHttpClient {
 
     public JsonNode post(AiProviderType providerType, String url, JsonNode body,
                          Map<String, String> headers) {
+        return post(providerType, url, body, headers, Duration.ofMinutes(3));
+    }
+
+    public JsonNode post(AiProviderType providerType, String url, JsonNode body,
+                         Map<String, String> headers, Duration timeout) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofMinutes(3))
+                .timeout(timeout)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(writeBody(providerType, body)));
         return send(providerType, builder, headers);

@@ -1,6 +1,8 @@
 package com.localflow.domain.provider.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.AiProviderType;
 import com.localflow.domain.provider.domain.OllamaStatus;
@@ -31,18 +33,18 @@ public class OllamaStatusService {
             now = System.nanoTime();
             cached = cachedStatus;
             if (!refresh && cached != null && now < cached.expiresAtNanos()) return cached.status();
-            OllamaStatus status = inspect();
+            OllamaStatus status = inspect(refresh);
             cachedStatus = new CachedStatus(status, now + cacheTtl().toNanos());
             return status;
         }
     }
 
-    private OllamaStatus inspect() {
+    private OllamaStatus inspect(boolean probeRequested) {
         if (properties == null || !properties.enabled()) {
             return unavailable("OLLAMA_ENABLED가 비활성화되어 있습니다.");
         }
         if (!properties.configured()) {
-            return unavailable("OLLAMA_BASE_URL 또는 OLLAMA_MODEL 설정을 확인해 주세요.");
+            return unavailable("OLLAMA_BASE_URL, OLLAMA_MODEL 또는 OLLAMA_PROBE_MODEL 설정을 확인해 주세요.");
         }
 
         String baseUrl = properties.baseUrl().replaceAll("/+$", "");
@@ -63,11 +65,32 @@ public class OllamaStatusService {
             JsonNode response = httpClient.get(AiProviderType.OLLAMA, baseUrl + "/api/tags",
                     Map.of(), properties.statusTimeout());
             List<String> models = installedModels(response);
-            boolean installed = models.stream().anyMatch(this::isConfiguredModel);
-            String message = installed
-                    ? "Ollama 서버와 모델을 사용할 수 있습니다."
-                    : "설정 모델 '" + properties.model() + "'이 설치되지 않았습니다.";
-            return new OllamaStatus(true, true, installed, installed, message, models);
+            boolean executionModelInstalled = isInstalled(models, properties.model());
+            boolean probeModelInstalled = isInstalled(models, properties.probeModel());
+            if (!executionModelInstalled) {
+                return new OllamaStatus(true, true, false, false,
+                        "실행 모델 '" + properties.model() + "'이 설치되지 않았습니다.", models);
+            }
+            if (!probeModelInstalled) {
+                return new OllamaStatus(true, true, false, false,
+                        "호출 점검 모델 '" + properties.probeModel() + "'이 설치되지 않았습니다.", models);
+            }
+            if (probeRequested) {
+                try {
+                    probe(baseUrl);
+                    return new OllamaStatus(true, true, true, true,
+                            "호출 점검 모델 '" + properties.probeModel()
+                                    + "'의 실제 응답을 확인했습니다. 작업은 '"
+                                    + properties.model() + "' 모델로 처리합니다.", models);
+                } catch (RuntimeException exception) {
+                    return new OllamaStatus(true, true, true, false,
+                            "호출 점검 모델 '" + properties.probeModel()
+                                    + "' 요청에 실패했습니다: " + exception.getMessage(), models);
+                }
+            }
+            return new OllamaStatus(true, true, true, true,
+                    "Ollama 서버와 두 모델이 준비되었습니다. 상태 새로고침 시 '"
+                            + properties.probeModel() + "' 모델을 실제 호출합니다.", models);
         } catch (RuntimeException exception) {
             return new OllamaStatus(true, true, false, false,
                     "Ollama 설치 모델 목록을 불러오지 못했습니다.", List.of());
@@ -86,8 +109,29 @@ public class OllamaStatusService {
         return List.copyOf(names);
     }
 
-    private boolean isConfiguredModel(String installedModel) {
-        return normalizedModel(installedModel).equals(normalizedModel(properties.model()));
+    private boolean isInstalled(List<String> installedModels, String expectedModel) {
+        return installedModels.stream()
+                .map(this::normalizedModel)
+                .anyMatch(normalizedModel(expectedModel)::equals);
+    }
+
+    private void probe(String baseUrl) {
+        ObjectNode body = JsonNodeFactory.instance.objectNode();
+        body.put("model", properties.probeModel());
+        body.put("prompt", "연결 점검입니다. OK만 출력하세요.");
+        body.put("stream", false);
+        body.put("think", false);
+        body.put("keep_alive", properties.keepAlive());
+        ObjectNode options = body.putObject("options");
+        options.put("temperature", 0);
+        options.put("seed", properties.seed());
+        options.put("num_predict", 8);
+        options.put("num_ctx", Math.min(properties.numCtx(), 2_048));
+        JsonNode response = httpClient.post(AiProviderType.OLLAMA,
+                baseUrl + "/api/generate", body, Map.of(), properties.requestTimeout());
+        if (response.path("response").asText().isBlank()) {
+            throw new IllegalStateException("Ollama가 빈 응답을 반환했습니다.");
+        }
     }
 
     private String normalizedModel(String model) {

@@ -61,13 +61,24 @@ $env:VERTEX_AI_LOCATION='us-central1'
 $env:VERTEX_AI_MODEL='gemini-2.5-flash'
 
 # 로컬 Ollama (API 키 불필요)
+$env:OLLAMA_ENABLED='true'
 $env:OLLAMA_BASE_URL='http://localhost:11434'
-$env:OLLAMA_MODEL='qwen3:8b'
+$env:OLLAMA_MODEL='qwen3.5:4b-q4_K_M'
+$env:OLLAMA_PROBE_MODEL='qwen2.5-coder:3b'
+$env:OLLAMA_NUM_CTX='8192'
+$env:OLLAMA_NUM_PREDICT='4096'
+$env:OLLAMA_REQUEST_TIMEOUT='10m'
+$env:OLLAMA_QUEUE_TIMEOUT='15m'
+$env:OLLAMA_MAX_CONCURRENT_REQUESTS='1'
 
 .\gradlew.bat bootRun
 ```
 
-`OPENAI_BASE_URL`, `JEV_BASE_URL`도 호환 서버를 사용할 때 재정의할 수 있습니다. Jev 판단은 OpenRouter Decisions API를 사용하며 모델 ID는 `typesafe/jev-1.13`입니다. 기본 개인정보 모드는 `LOCAL_ONLY`이므로 OpenAI·Vertex AI·Jev를 사용하려면 프로젝트 설정에서 `EXTERNAL_ALLOWED`로 바꿔야 합니다. 로컬 전용에서는 파일과 프롬프트가 Ollama 밖으로 전송되지 않습니다.
+`OPENAI_BASE_URL`, `JEV_BASE_URL`도 호환 서버를 사용할 때 재정의할 수 있습니다. Jev 판단은 OpenRouter Decisions API를 사용하며 모델 ID는 `typesafe/jev-1.13`입니다. 기본 개인정보 모드는 `LOCAL_ONLY`이므로 OpenAI·Vertex AI·Jev를 사용하려면 프로젝트 설정에서 `EXTERNAL_ALLOWED`로 바꿔야 합니다. 로컬 전용에서는 `localhost`, `127.0.0.0/8`, `::1` Ollama 주소만 허용하고 `:cloud`, `*-cloud` 계열 모델을 차단합니다.
+
+Ollama는 역할별로 두 모델을 사용합니다. `OLLAMA_PROBE_MODEL`은 AI 제공자 상태를 수동 새로고침할 때 짧은 실제 요청으로 호출 경로와 오류 여부를 점검하고, `OLLAMA_MODEL`은 프롬프트 분해와 파일 작업 결과를 생성합니다. 기본값은 각각 `qwen2.5-coder:3b`, `qwen3.5:4b-q4_K_M`입니다.
+
+Ollama 작업 요청은 기본적으로 한 번에 하나만 실행됩니다. 동시에 요청하면 먼저 시작한 요청이 끝날 때까지 대기열에서 기다리며, 최초 모델 로딩과 대기 상태는 실행 타임라인에 표시됩니다. 메모리가 부족하면 `OLLAMA_NUM_CTX=8192`와 `AI_CONTEXT_MAX_CHARS=16000` 정도로 낮추고, 충분한 장비에서만 동시 실행 수를 높이세요. `OLLAMA_REQUEST_TIMEOUT`은 실제 모델 응답 제한, `OLLAMA_QUEUE_TIMEOUT`은 앞선 작업을 기다리는 제한입니다.
 
 #### Vertex AI 서비스 계정 준비
 

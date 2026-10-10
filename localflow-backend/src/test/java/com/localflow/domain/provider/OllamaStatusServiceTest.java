@@ -2,6 +2,7 @@ package com.localflow.domain.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.OllamaStatus;
@@ -14,9 +15,11 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class OllamaStatusServiceTest {
+    private final AtomicReference<String> probeRequestBody = new AtomicReference<>();
     @Test
     void reportsAvailableAndCachesInstalledModels() throws Exception {
         AtomicInteger versionCalls = new AtomicInteger();
@@ -113,6 +116,28 @@ class OllamaStatusServiceTest {
     }
 
     @Test
+    void explicitRefreshUsesProbeModelWhileWorkModelRemainsSeparate() throws Exception {
+        HttpServer server = server(new AtomicInteger(), new AtomicInteger(), 200, """
+                {"models":[
+                  {"name":"qwen2.5-coder:3b"},
+                  {"name":"qwen3.5:4b-q4_K_M"}
+                ]}
+                """);
+        try {
+            OllamaStatus status = service(true, url(server),
+                    "qwen3.5:4b-q4_K_M", "qwen2.5-coder:3b").status(true);
+
+            JsonNode request = new ObjectMapper().readTree(probeRequestBody.get());
+            assertThat(status.available()).isTrue();
+            assertThat(status.message()).contains("qwen2.5-coder:3b", "qwen3.5:4b-q4_K_M");
+            assertThat(request.path("model").asText()).isEqualTo("qwen2.5-coder:3b");
+            assertThat(request.path("options").path("num_predict").asInt()).isEqualTo(8);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void disabledProviderDoesNotContactServer() {
         OllamaStatus status = service(false, "http://127.0.0.1:1",
                 "qwen2.5-coder:3b").status(false);
@@ -124,10 +149,16 @@ class OllamaStatusServiceTest {
     }
 
     private OllamaStatusService service(boolean enabled, String baseUrl, String model) {
+        return service(enabled, baseUrl, model, model);
+    }
+
+    private OllamaStatusService service(boolean enabled, String baseUrl, String model,
+                                        String probeModel) {
         AiProviderProperties properties = new AiProviderProperties(
                 60_000, 20, null, null,
                 new AiProviderProperties.Ollama(
-                        enabled, baseUrl, model, Duration.ofSeconds(30), Duration.ofMillis(500)),
+                        enabled, baseUrl, model, probeModel,
+                        Duration.ofSeconds(30), Duration.ofMillis(500)),
                 null);
         return new OllamaStatusService(properties, new ProviderHttpClient(new ObjectMapper()));
     }
@@ -142,6 +173,10 @@ class OllamaStatusServiceTest {
         server.createContext("/api/tags", exchange -> {
             tagsCalls.incrementAndGet();
             respond(exchange, tagsStatus, tagsBody);
+        });
+        server.createContext("/api/generate", exchange -> {
+            probeRequestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, "{\"model\":\"qwen2.5-coder:3b\",\"response\":\"OK\",\"done\":true}");
         });
         server.start();
         return server;
