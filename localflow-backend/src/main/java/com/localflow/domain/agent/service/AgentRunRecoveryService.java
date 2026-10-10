@@ -17,21 +17,29 @@ public class AgentRunRecoveryService {
             AgentRunStatus.DECIDING,
             AgentRunStatus.PLANNING,
             AgentRunStatus.VALIDATING,
-            AgentRunStatus.RUNNING
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.CANCEL_REQUESTED
     );
 
     private final AgentRunRepository runRepository;
     private final AgentRunProgressService progressService;
+    private final AgentRunCancellationService cancellationService;
 
     public AgentRunRecoveryService(AgentRunRepository runRepository,
-                                   AgentRunProgressService progressService) {
+                                   AgentRunProgressService progressService,
+                                   AgentRunCancellationService cancellationService) {
         this.runRepository = runRepository;
         this.progressService = progressService;
+        this.cancellationService = cancellationService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void failInterruptedRuns() {
         for (AgentRun run : runRepository.findAllByStatusIn(IN_FLIGHT_STATUSES)) {
+            if (run.getStatus() == AgentRunStatus.CANCEL_REQUESTED) {
+                cancellationService.complete(run.getProject().getId(), run.getId());
+                continue;
+            }
             run.fail(RESTART_MESSAGE);
             runRepository.saveAndFlush(run);
             progressService.append(run.getProject().getId(), run.getId(), AgentProgressStage.FAILED,

@@ -121,12 +121,14 @@ export type AgentRun = {
   resultMessage: string | null; errorMessage: string | null; model: string | null
   inputTokens: number | null; outputTokens: number | null
   createdAt: string; updatedAt: string; completedAt: string | null
+  cancelRequestedAt: string | null; cancelledAt: string | null
 }
 
 export type AgentProgressStage =
   | 'PREPARING' | 'DECOMPOSING' | 'DECOMPOSED' | 'DECIDING'
   | 'SELECTING_CONTEXT' | 'PLANNING' | 'VALIDATING'
   | 'WAITING_APPROVAL' | 'APPLYING' | 'COMPLETED' | 'FAILED'
+  | 'CANCELLATION_REQUESTED' | 'CANCELLED'
 
 export type AgentRunProgress = {
   id: number

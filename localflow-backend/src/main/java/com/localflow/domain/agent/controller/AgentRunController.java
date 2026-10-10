@@ -6,6 +6,7 @@ import com.localflow.domain.agent.dto.response.AgentRunResponse;
 import com.localflow.domain.agent.dto.response.AgentRunProgressResponse;
 import com.localflow.domain.agent.dto.response.AgentRunSummaryResponse;
 import com.localflow.domain.agent.service.AgentExecutionService;
+import com.localflow.domain.agent.service.AgentRunCancellationService;
 import com.localflow.domain.agent.service.AgentRunDispatchService;
 import com.localflow.domain.agent.service.AgentRunProgressService;
 import com.localflow.domain.agent.service.AgentRunService;
@@ -29,15 +30,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentRunController {
     private final AgentRunService agentRunService;
     private final AgentExecutionService agentExecutionService;
+    private final AgentRunCancellationService cancellationService;
     private final AgentRunDispatchService dispatchService;
     private final AgentRunProgressService progressService;
 
     public AgentRunController(AgentRunService agentRunService,
                               AgentExecutionService agentExecutionService,
+                              AgentRunCancellationService cancellationService,
                               AgentRunDispatchService dispatchService,
                               AgentRunProgressService progressService) {
         this.agentRunService = agentRunService;
         this.agentExecutionService = agentExecutionService;
+        this.cancellationService = cancellationService;
         this.dispatchService = dispatchService;
         this.progressService = progressService;
     }
@@ -91,10 +95,10 @@ public class AgentRunController {
         return ApiResponse.success(progressService.findAll(projectId, runId));
     }
 
-    @Operation(summary = "대기 중인 에이전트 실행 취소")
+    @Operation(summary = "에이전트 실행 취소 요청")
     @PostMapping("/{runId}/cancel")
     public ApiResponse<AgentRunResponse> cancel(@PathVariable String projectId,
                                                @PathVariable String runId) {
-        return ApiResponse.success(agentRunService.cancel(projectId, runId));
+        return ApiResponse.success(cancellationService.request(projectId, runId));
     }
 }

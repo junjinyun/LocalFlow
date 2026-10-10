@@ -10,6 +10,8 @@ public enum AgentProgressStage {
     VALIDATING,
     WAITING_APPROVAL,
     APPLYING,
+    CANCELLATION_REQUESTED,
+    CANCELLED,
     COMPLETED,
     FAILED
 }

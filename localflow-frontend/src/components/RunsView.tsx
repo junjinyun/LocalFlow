@@ -6,7 +6,8 @@ import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
 
-const pollingStatuses = new Set(['PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING'])
+const pollingStatuses = new Set(['PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING', 'CANCEL_REQUESTED'])
+const cancellableStatuses = new Set(['DRAFT', 'PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING', 'WAITING_APPROVAL'])
 
 export default function RunsView({ project, notify }: { project: Project; notify: (message: string, tone?: 'success' | 'error') => void }) {
   const [runs, setRuns] = useState<AgentRunSummary[]>([])
@@ -68,12 +69,16 @@ export default function RunsView({ project, notify }: { project: Project; notify
   }, [project.id, selectedRun?.runId, selectedRun?.status])
 
   const cancel = async (runId: string) => {
+    setWorkingId(runId)
     try {
       const updated = await api.runs.cancel(project.id, runId)
       storeRun(updated)
-      notify('실행 초안을 취소했습니다.')
+      setProgress(await api.runs.progress(project.id, runId))
+      notify(updated.status === 'CANCELLED' ? 'AI 작업을 취소했습니다.' : '취소를 요청했습니다. 현재 응답은 적용하지 않습니다.')
     } catch (error) {
       notify(error instanceof Error ? error.message : '실행 취소에 실패했습니다.', 'error')
+    } finally {
+      setWorkingId(null)
     }
   }
 
@@ -285,7 +290,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
           <div className="run-detail-actions">
             {selectedRun.status === 'DRAFT' && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => execute(selectedRun.runId, false)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}실행</button>}
             {selectedRun.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => execute(selectedRun.runId, true)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{selectedRun.planJson ? '승인 및 적용' : '승인하고 계속'}</button>}
-            {['DRAFT', 'PENDING', 'WAITING_APPROVAL'].includes(selectedRun.status) && <button className="secondary-button danger-text" disabled={workingId === selectedRun.runId} onClick={() => cancel(selectedRun.runId)}><Ban size={15} />취소</button>}
+            {cancellableStatuses.has(selectedRun.status) && <button className="secondary-button danger-text" disabled={workingId === selectedRun.runId} onClick={() => cancel(selectedRun.runId)}><Ban size={15} />취소</button>}
           </div>
         </div>
       </section>
@@ -307,6 +312,8 @@ export default function RunsView({ project, notify }: { project: Project; notify
             const summary = run.resultSummary || (
               run.status === 'COMPLETED' ? 'AI 작업이 완료되었습니다. 상세 화면에서 결과를 확인할 수 있습니다.'
                 : run.status === 'WAITING_APPROVAL' ? '파일 변경 계획이 준비되어 승인을 기다리고 있습니다.'
+                  : run.status === 'CANCEL_REQUESTED' ? '취소 요청을 처리하고 AI 결과를 폐기하는 중입니다.'
+                    : run.status === 'CANCELLED' ? '사용자가 실행을 취소했습니다.'
                   : run.status === 'FAILED' ? '실행에 실패했습니다. 상세 화면에서 오류 내용을 확인해 주세요.'
                     : 'AI 작업이 준비되었거나 진행 중입니다.'
             )
@@ -345,7 +352,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
                 <button className="icon-button" disabled={workingId === run.runId} onClick={() => refreshOne(run.runId)} title="실행 단건 조회"><RefreshCw className={workingId === run.runId ? 'spin' : ''} size={15} /></button>
                 {run.status === 'DRAFT' && <button className="primary-button" disabled={workingId === run.runId} onClick={() => execute(run.runId, false)}>{workingId === run.runId ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}실행</button>}
                 {run.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === run.runId} onClick={() => execute(run.runId, true)}>{workingId === run.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{operations.length > 0 ? '승인 및 적용' : '승인하고 계속'}</button>}
-                {['DRAFT', 'PENDING', 'WAITING_APPROVAL'].includes(run.status) && <button className="secondary-button danger-text" disabled={workingId === run.runId} onClick={() => cancel(run.runId)}><Ban size={15} />취소</button>}
+                {cancellableStatuses.has(run.status) && <button className="secondary-button danger-text" disabled={workingId === run.runId} onClick={() => cancel(run.runId)}><Ban size={15} />취소</button>}
               </div>
             </article>
           })}

@@ -62,6 +62,7 @@ public class AgentExecutionService {
     private final WorkspaceStorageService storageService;
     private final ChatMessageRepository chatRepository;
     private final AgentRunProgressService progressService;
+    private final AgentRunCancellationService cancellationService;
     private final ObjectMapper objectMapper;
     private final Map<AiProviderType, GenerationProvider> providers;
 
@@ -80,6 +81,7 @@ public class AgentExecutionService {
                                  WorkspaceStorageService storageService,
                                  ChatMessageRepository chatRepository,
                                  AgentRunProgressService progressService,
+                                 AgentRunCancellationService cancellationService,
                                  ObjectMapper objectMapper,
                                  List<GenerationProvider> providers) {
         this.runService = runService;
@@ -97,6 +99,7 @@ public class AgentExecutionService {
         this.storageService = storageService;
         this.chatRepository = chatRepository;
         this.progressService = progressService;
+        this.cancellationService = cancellationService;
         this.objectMapper = objectMapper;
         this.providers = new EnumMap<>(AiProviderType.class);
         providers.forEach(provider -> this.providers.put(provider.providerType(), provider));
@@ -106,15 +109,19 @@ public class AgentExecutionService {
         AgentRun run = runService.requireRun(projectId, runId);
         if (run.getStatus() != AgentRunStatus.PENDING) return;
         try {
+            cancellationService.checkpoint(projectId, runId);
             progressService.append(projectId, runId, AgentProgressStage.PREPARING,
                     "요청을 확인하고 실행 환경을 준비하는 중입니다.");
             if (approvalResume && run.getPlanJson() != null) {
                 AgentPlan storedPlan = planParser.parse(run.getPlanJson());
+                cancellationService.checkpoint(projectId, runId);
                 progressService.append(projectId, runId, AgentProgressStage.APPLYING,
                         "승인된 파일 변경을 업로드된 프로젝트에 적용하는 중입니다.");
                 run.startRunning(snapshotJson(projectId, storedPlan));
                 runRepository.saveAndFlush(run);
-                apply(projectId, storedPlan);
+                cancellationService.checkpoint(projectId, runId);
+                apply(projectId, runId, storedPlan);
+                cancellationService.checkpoint(projectId, runId);
                 run.complete(run.getDecisionJson(), run.getPlanJson(), storedPlan.response(),
                         run.getModel(), run.getInputTokens(), run.getOutputTokens());
                 runRepository.saveAndFlush(run);
@@ -133,11 +140,13 @@ public class AgentExecutionService {
             if (!provider.available()) throw new CustomException(ErrorCode.PROVIDER_NOT_CONFIGURED);
             String selectedModel = selectModel(provider, requestedModel);
             ensurePrivacy(settings, provider, selectedModel);
+            cancellationService.checkpoint(projectId, runId);
             run.startDeciding();
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.DECOMPOSING,
                     "선택한 AI가 요청을 실행 가능한 작업 단위로 분해하는 중입니다.");
             DecompositionOutcome decomposition = decompose(run, files, provider, selectedModel);
+            cancellationService.checkpoint(projectId, runId);
             String decompositionJson = decompositionParser.toJson(decomposition.value());
             GenerationResult decompositionGeneration = decomposition.generation();
             Integer decompositionInputTokens = decompositionGeneration == null
@@ -164,6 +173,7 @@ public class AgentExecutionService {
                     "Jev가 관련 태그, 대상 범위와 작업 위험도를 판단하는 중입니다.");
             DecisionResult decision = decisionService.decide(run.getPrompt(), files,
                     settings.getPrivacyMode() == PrivacyMode.EXTERNAL_ALLOWED, decomposition.value());
+            cancellationService.checkpoint(projectId, runId);
             String decisionJson = objectMapper.writeValueAsString(decision);
 
             if (settings.getReadPolicy() == PermissionPolicy.CONFIRM && !files.isEmpty() && !approved) {
@@ -182,6 +192,7 @@ public class AgentExecutionService {
                     "태그와 프로젝트 인덱스를 기준으로 관련 파일을 찾는 중입니다.");
             AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
                     run.getProject(), run.getPrompt(), decision, includeContents);
+            cancellationService.checkpoint(projectId, runId);
             String systemPrompt = systemPrompt();
             String userPrompt = userPrompt(run.getPrompt(), decomposition.value(), decision,
                     contextSnapshot.content());
@@ -200,6 +211,7 @@ public class AgentExecutionService {
                     generationRequest,
                     planParser::parse,
                     "파일 변경 계획");
+            cancellationService.checkpoint(projectId, runId);
             GenerationResult generation = planGeneration.generation();
             AgentPlan plan = planGeneration.value();
             if (planGeneration.attempts() > 1) {
@@ -213,6 +225,7 @@ public class AgentExecutionService {
                     "생성된 결과를 검증하고 파일 변경 전후 차이를 계산하는 중입니다.");
             validatePolicies(settings, plan);
             String changesJson = snapshotJson(projectId, plan);
+            cancellationService.checkpoint(projectId, runId);
             Integer inputTokens = sumTokens(
                     decompositionInputTokens, generation.inputTokens());
             Integer outputTokens = sumTokens(
@@ -231,14 +244,22 @@ public class AgentExecutionService {
                     "검증된 파일 변경을 업로드된 프로젝트에 적용하는 중입니다.");
             run.startRunning(changesJson);
             runRepository.saveAndFlush(run);
-            apply(projectId, plan);
+            cancellationService.checkpoint(projectId, runId);
+            apply(projectId, runId, plan);
+            cancellationService.checkpoint(projectId, runId);
             run.complete(decisionJson, planJson, plan.response(), generation.model(),
                     inputTokens, outputTokens);
             runRepository.saveAndFlush(run);
             addSystemMessage(run, plan.response());
             progressService.append(projectId, runId, AgentProgressStage.COMPLETED,
                     "AI 작업과 결과 정리를 모두 완료했습니다.");
+        } catch (AgentRunCancelledException exception) {
+            cancellationService.complete(projectId, runId);
         } catch (Exception exception) {
+            if (cancellationService.isCancellationRequested(projectId, runId)) {
+                cancellationService.complete(projectId, runId);
+                return;
+            }
             run.fail(safeMessage(exception));
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.FAILED,
@@ -328,8 +349,9 @@ public class AgentExecutionService {
         };
     }
 
-    private void apply(String projectId, AgentPlan plan) {
+    private void apply(String projectId, String runId, AgentPlan plan) {
         for (FileOperationPlan operation : plan.operations()) {
+            cancellationService.checkpoint(projectId, runId);
             String path = operation.path();
             ProjectFile current = fileRepository.findByProject_IdAndRelativePath(projectId, path).orElse(null);
             switch (operation.action()) {

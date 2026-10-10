@@ -12,12 +12,13 @@ export default function AgentProgressTimeline({ events, active = false }: Props)
       {events.map((event, index) => {
         const current = active && index === events.length - 1
         const failed = event.stage === 'FAILED'
+        const cancelled = event.stage === 'CANCELLED'
         const waiting = event.stage === 'WAITING_APPROVAL'
-        const completed = event.stage === 'COMPLETED' || (!current && !failed && !waiting)
+        const completed = event.stage === 'COMPLETED' || (!current && !failed && !cancelled && !waiting)
         return (
-          <li className={`${current ? 'current' : ''} ${failed ? 'failed' : ''}`} key={event.id}>
+          <li className={`${current ? 'current' : ''} ${failed ? 'failed' : ''} ${cancelled ? 'cancelled' : ''}`} key={event.id}>
             <span className="agent-progress-marker">
-              {failed ? <XCircle size={16} />
+              {failed || cancelled ? <XCircle size={16} />
                 : waiting ? <PauseCircle size={16} />
                   : current ? <LoaderCircle className="spin" size={16} />
                     : completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
