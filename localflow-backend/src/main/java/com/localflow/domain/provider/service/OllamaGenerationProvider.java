@@ -35,6 +35,9 @@ public class OllamaGenerationProvider implements GenerationProvider {
     @Override public boolean available() { return status(false).available(); }
     @Override public String model() { return properties == null ? null : properties.model(); }
     @Override public java.util.List<String> models() { return status(false).models(); }
+    @Override public int structuredOutputRetries() {
+        return properties == null ? 0 : properties.structuredOutputRetries();
+    }
 
     public OllamaStatus status(boolean refresh) {
         return statusService.status(refresh);
@@ -48,6 +51,15 @@ public class OllamaGenerationProvider implements GenerationProvider {
         String model = request.model() == null || request.model().isBlank() ? properties.model() : request.model();
         body.put("model", model);
         body.put("stream", false);
+        body.put("think", properties.think());
+        body.put("keep_alive", properties.keepAlive());
+        if (request.responseSchema() != null && !request.responseSchema().isNull()) {
+            body.set("format", request.responseSchema());
+        }
+        ObjectNode options = body.putObject("options");
+        options.put("temperature", properties.temperature());
+        options.put("seed", properties.seed());
+        options.put("num_predict", properties.numPredict());
         ArrayNode messages = body.putArray("messages");
         messages.add(message("system", request.systemPrompt()));
         messages.add(message("user", request.userPrompt()));

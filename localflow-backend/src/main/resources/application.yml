@@ -84,6 +84,12 @@ localflow:
       model: ${OLLAMA_MODEL:qwen2.5-coder:3b}
       status-cache-ttl: ${OLLAMA_STATUS_CACHE_TTL:5s}
       status-timeout: ${OLLAMA_STATUS_TIMEOUT:2s}
+      temperature: ${OLLAMA_TEMPERATURE:0}
+      seed: ${OLLAMA_SEED:42}
+      think: ${OLLAMA_THINK:false}
+      num-predict: ${OLLAMA_NUM_PREDICT:4096}
+      keep-alive: ${OLLAMA_KEEP_ALIVE:10m}
+      structured-output-retries: ${OLLAMA_STRUCTURED_OUTPUT_RETRIES:1}
     vertex-ai:
       credentials-base64: ${VERTEX_AI_SERVICE_ACCOUNT_BASE64:}
       project-id: ${VERTEX_AI_PROJECT:}

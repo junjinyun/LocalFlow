@@ -29,12 +29,24 @@ public record AiProviderProperties(
     }
 
     public record Ollama(boolean enabled, String baseUrl, String model,
-                         Duration statusCacheTtl, Duration statusTimeout) {
+                         Duration statusCacheTtl, Duration statusTimeout,
+                         double temperature, int seed, boolean think,
+                         int numPredict, String keepAlive, int structuredOutputRetries) {
+        public Ollama(boolean enabled, String baseUrl, String model,
+                      Duration statusCacheTtl, Duration statusTimeout) {
+            this(enabled, baseUrl, model, statusCacheTtl, statusTimeout,
+                    0.0, 42, false, 4_096, "10m", 1);
+        }
+
         public Ollama {
             statusCacheTtl = statusCacheTtl == null || statusCacheTtl.isNegative()
                     ? Duration.ofSeconds(5) : statusCacheTtl;
             statusTimeout = statusTimeout == null || statusTimeout.isNegative() || statusTimeout.isZero()
                     ? Duration.ofSeconds(2) : statusTimeout;
+            temperature = temperature < 0 ? 0.0 : temperature;
+            numPredict = numPredict <= 0 ? 4_096 : numPredict;
+            keepAlive = keepAlive == null || keepAlive.isBlank() ? "10m" : keepAlive.strip();
+            structuredOutputRetries = Math.max(0, Math.min(structuredOutputRetries, 2));
         }
 
         public boolean configured() {
