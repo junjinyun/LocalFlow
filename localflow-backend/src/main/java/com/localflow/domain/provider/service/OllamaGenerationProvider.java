@@ -20,15 +20,18 @@ public class OllamaGenerationProvider implements GenerationProvider {
     private final ProviderHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final OllamaStatusService statusService;
+    private final OllamaExecutionCoordinator executionCoordinator;
 
     public OllamaGenerationProvider(AiProviderProperties properties,
                                     ProviderHttpClient httpClient,
                                     ObjectMapper objectMapper,
-                                    OllamaStatusService statusService) {
+                                    OllamaStatusService statusService,
+                                    OllamaExecutionCoordinator executionCoordinator) {
         this.properties = properties.ollama();
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
         this.statusService = statusService;
+        this.executionCoordinator = executionCoordinator;
     }
 
     @Override public AiProviderType providerType() { return AiProviderType.OLLAMA; }
@@ -41,6 +44,10 @@ public class OllamaGenerationProvider implements GenerationProvider {
 
     public OllamaStatus status(boolean refresh) {
         return statusService.status(refresh);
+    }
+
+    public OllamaExecutionCoordinator.ExecutionStatus executionStatus() {
+        return executionCoordinator.status();
     }
 
     @Override
@@ -60,11 +67,13 @@ public class OllamaGenerationProvider implements GenerationProvider {
         options.put("temperature", properties.temperature());
         options.put("seed", properties.seed());
         options.put("num_predict", properties.numPredict());
+        options.put("num_ctx", properties.numCtx());
         ArrayNode messages = body.putArray("messages");
         messages.add(message("system", request.systemPrompt()));
         messages.add(message("user", request.userPrompt()));
-        JsonNode response = httpClient.post(providerType(),
-                properties.baseUrl().replaceAll("/+$", "") + "/api/chat", body, Map.of());
+        JsonNode response = executionCoordinator.execute(() -> httpClient.post(providerType(),
+                properties.baseUrl().replaceAll("/+$", "") + "/api/chat", body, Map.of(),
+                properties.requestTimeout()));
         String text = response.path("message").path("content").asText();
         if (text.isBlank()) throw new ProviderCallException(providerType(), "Ollama 응답에 텍스트가 없습니다.");
         return new GenerationResult(text, response.path("model").asText(model),

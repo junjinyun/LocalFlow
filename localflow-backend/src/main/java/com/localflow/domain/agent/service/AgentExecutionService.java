@@ -24,6 +24,8 @@ import com.localflow.domain.provider.domain.DecisionResult;
 import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GenerationResult;
 import com.localflow.domain.provider.port.GenerationProvider;
+import com.localflow.domain.provider.service.OllamaGenerationProvider;
+import com.localflow.domain.provider.service.OllamaLocalPolicy;
 import com.localflow.domain.provider.service.StructuredGenerationService;
 import com.localflow.domain.provider.service.StructuredGenerationService.ParsedGeneration;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
@@ -52,6 +54,7 @@ public class AgentExecutionService {
     private final TaskDecompositionParser decompositionParser;
     private final AgentOutputSchemas outputSchemas;
     private final StructuredGenerationService structuredGenerationService;
+    private final OllamaLocalPolicy ollamaLocalPolicy;
     private final ProjectSettingsRepository settingsRepository;
     private final ProjectFileRepository fileRepository;
     private final ProjectFileService fileService;
@@ -69,6 +72,7 @@ public class AgentExecutionService {
                                  TaskDecompositionParser decompositionParser,
                                  AgentOutputSchemas outputSchemas,
                                  StructuredGenerationService structuredGenerationService,
+                                 OllamaLocalPolicy ollamaLocalPolicy,
                                  ProjectSettingsRepository settingsRepository,
                                  ProjectFileRepository fileRepository,
                                  ProjectFileService fileService,
@@ -85,6 +89,7 @@ public class AgentExecutionService {
         this.decompositionParser = decompositionParser;
         this.outputSchemas = outputSchemas;
         this.structuredGenerationService = structuredGenerationService;
+        this.ollamaLocalPolicy = ollamaLocalPolicy;
         this.settingsRepository = settingsRepository;
         this.fileRepository = fileRepository;
         this.fileService = fileService;
@@ -122,9 +127,13 @@ public class AgentExecutionService {
 
             ProjectSettings settings = requireSettings(projectId);
             List<ProjectFile> files = contextService.files(projectId);
-            GenerationProvider provider = selectProvider(run.getPreferredGenerationProvider());
-            ensurePrivacy(settings, provider.providerType());
-            String selectedModel = selectModel(provider, run.getPreferredModel());
+            GenerationProvider provider = selectProvider(run.getPreferredGenerationProvider(), settings);
+            String requestedModel = run.getPreferredModel() == null || run.getPreferredModel().isBlank()
+                    ? provider.model() : run.getPreferredModel().strip();
+            ensurePrivacy(settings, provider, requestedModel);
+            if (!provider.available()) throw new CustomException(ErrorCode.PROVIDER_NOT_CONFIGURED);
+            String selectedModel = selectModel(provider, requestedModel);
+            ensurePrivacy(settings, provider, selectedModel);
             run.startDeciding();
             progressService.append(projectId, runId, AgentProgressStage.DECOMPOSING,
                     "선택한 AI가 요청을 실행 가능한 작업 단위로 분해하는 중입니다.");
@@ -173,6 +182,7 @@ public class AgentExecutionService {
             run.startPlanning(provider.providerType());
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
                     "선택한 AI가 코드와 파일 변경 계획을 생성하는 중입니다.");
+            appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
             ParsedGeneration<AgentPlan> planGeneration = structuredGenerationService.generate(
                     provider,
                     new GenerationRequest(
@@ -240,7 +250,15 @@ public class AgentExecutionService {
         return AgentRunResponse.from(run);
     }
 
-    private GenerationProvider selectProvider(AiProviderType preferred) {
+    private GenerationProvider selectProvider(AiProviderType preferred, ProjectSettings settings) {
+        if (settings.getPrivacyMode() == PrivacyMode.LOCAL_ONLY) {
+            if (preferred != null && preferred != AiProviderType.OLLAMA) {
+                throw new CustomException(ErrorCode.EXTERNAL_PROVIDER_DENIED);
+            }
+            GenerationProvider local = providers.get(AiProviderType.OLLAMA);
+            if (local == null) throw new CustomException(ErrorCode.PROVIDER_NOT_CONFIGURED);
+            return local;
+        }
         if (preferred != null) {
             GenerationProvider selected = providers.get(preferred);
             if (selected == null || !selected.available()) {
@@ -255,10 +273,12 @@ public class AgentExecutionService {
         throw new CustomException(ErrorCode.PROVIDER_NOT_CONFIGURED);
     }
 
-    private void ensurePrivacy(ProjectSettings settings, AiProviderType provider) {
-        if (settings.getPrivacyMode() == PrivacyMode.LOCAL_ONLY && provider != AiProviderType.OLLAMA) {
+    private void ensurePrivacy(ProjectSettings settings, GenerationProvider provider, String model) {
+        if (settings.getPrivacyMode() != PrivacyMode.LOCAL_ONLY) return;
+        if (provider.providerType() != AiProviderType.OLLAMA) {
             throw new CustomException(ErrorCode.EXTERNAL_PROVIDER_DENIED);
         }
+        ollamaLocalPolicy.validate(model);
     }
 
     private String selectModel(GenerationProvider provider, String preferredModel) {
@@ -383,6 +403,8 @@ public class AgentExecutionService {
                 .distinct().sorted().toList();
         GenerationResult generation = null;
         try {
+            appendOllamaWaitProgress(run.getProject().getId(), run.getId(), provider,
+                    AgentProgressStage.DECOMPOSING);
             ParsedGeneration<TaskDecomposition> parsed = structuredGenerationService.generate(
                     provider,
                     new GenerationRequest(
@@ -441,6 +463,26 @@ public class AgentExecutionService {
         String message = exception.getMessage();
         if (message == null || message.isBlank()) return "구조화 응답을 해석하지 못했습니다.";
         return message.length() <= 500 ? message : message.substring(0, 500) + "…";
+    }
+
+    private void appendOllamaWaitProgress(String projectId, String runId,
+                                          GenerationProvider provider,
+                                          AgentProgressStage stage) {
+        if (!(provider instanceof OllamaGenerationProvider ollama)) return;
+        var status = ollama.executionStatus();
+        String timeout = status.requestTimeout().toMinutes() > 0
+                ? status.requestTimeout().toMinutes() + "분"
+                : status.requestTimeout().toSeconds() + "초";
+        String message;
+        if (status.active() > 0 || status.waiting() > 0) {
+            message = "다른 로컬 AI 작업이 실행 중이므로 Ollama 단일 작업 대기열에서 기다리는 중입니다.";
+        } else if (!status.warmedUp()) {
+            message = "로컬 Ollama 모델을 처음 불러오고 있습니다. 최초 실행은 오래 걸릴 수 있으며 제한 시간은 "
+                    + timeout + "입니다.";
+        } else {
+            message = "로컬 Ollama 실행 슬롯을 확보하고 모델 응답을 기다리는 중입니다.";
+        }
+        progressService.append(projectId, runId, stage, message);
     }
 
     private record DecompositionOutcome(

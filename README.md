@@ -51,7 +51,7 @@ LocalFlow는 개발자가 사용 중인 AI 도구의 대화·에이전트 한도
 LocalFlow/
 ├─ localflow-frontend/       # React 웹 클라이언트
 ├─ localflow-backend/        # Spring Boot API·에이전트 서버
-├─ ollama-fastapi-backend/   # 초기 Ollama 연동 실험 코드(로컬 개발용)
+├─ ollama-fastapi-backend/   # 초기 Ollama 연동 실험 코드(레거시·실행 대상 아님)
 ├─ .github/                  # 이슈·PR 템플릿
 └─ .portfolio/               # AI 작업 컨텍스트에서 제외된 포트폴리오 기록
 ```
@@ -82,7 +82,7 @@ Railway에서는 하나의 프로젝트 안에 다음 두 서비스를 만들고
 | Frontend | `/localflow-frontend` | React 정적 웹 서비스 |
 | Backend | `/localflow-backend` | Spring Boot API 및 에이전트 실행 |
 
-`ollama-fastapi-backend`는 사용자 PC의 Ollama와 통신하는 초기 실험 코드이므로 Railway 배포 대상에서 제외합니다. Railway에 배포한 서버는 사용자 PC의 `localhost` Ollama에 직접 접근할 수 없으므로, 외부 체험 환경에서는 OpenAI 또는 Vertex AI를 사용합니다.
+`ollama-fastapi-backend`는 현재 Spring 백엔드의 Ollama 기능으로 대체된 초기 실험 코드입니다. 참고용 레거시로만 남겨 두며 개발·배포 실행 대상에서 제외합니다. Railway에 배포한 서버는 사용자 PC의 `localhost` Ollama에 직접 접근할 수 없으므로, 외부 체험 환경에서는 OpenAI 또는 Vertex AI를 사용합니다.
 
 업로드 파일과 H2 데이터베이스를 재배포 후에도 유지하려면 Backend에 Railway Volume을 연결하고 `LOCALFLOW_DB_URL`, `LOCALFLOW_WORKSPACE_ROOT`를 해당 마운트 경로 아래로 지정해야 합니다. 실제 배포 전에는 프론트엔드 정적 서버, Railway의 `PORT`, 공개 프론트 도메인 CORS 및 `VITE_API_BASE_URL`도 함께 설정합니다.
 
@@ -145,7 +145,7 @@ npm run dev
 |---|---|---|
 | OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` | 모델 목록은 `OPENAI_MODELS`로 변경 |
 | Vertex AI | `VERTEX_AI_SERVICE_ACCOUNT_BASE64`, `VERTEX_AI_PROJECT` | 서비스 계정 JSON 전체를 Base64로 입력 |
-| Ollama | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | API 키 불필요 |
+| Ollama | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_PROBE_MODEL`, `OLLAMA_NUM_CTX` | 3B 호출 점검과 4B 실제 작업을 분리, API 키 불필요 |
 | Jev/OpenRouter | `OPENROUTER_API_KEY`, `JEV_MODEL` | 미설정 시 로컬 판단 사용 |
 
 API 키, 실제 `.env`, 서비스 계정 JSON과 Base64 값은 커밋하지 않습니다.
@@ -154,6 +154,7 @@ API 키, 실제 `.env`, 서비스 계정 JSON과 Base64 값은 커밋하지 않�
 
 - 업로드된 프로젝트 사본만 수정하며 사용자 PC의 원본 파일에 직접 접근하지 않습니다.
 - 기본 개인정보 모드는 `LOCAL_ONLY`이며 Ollama만 실행할 수 있습니다.
+- `LOCAL_ONLY`에서는 `localhost`, `127.0.0.0/8`, `::1` 주소만 허용하며 Ollama Cloud 모델은 차단합니다.
 - OpenAI, Vertex AI 또는 Jev를 사용하려면 프로젝트 설정에서 외부 AI 전송을 허용해야 합니다.
 - 읽기, 생성, 수정, 이동, 삭제 권한은 `허용`, `확인`, `거부`로 설정할 수 있습니다.
 - 승인 대기 화면에서 변경 전후 내용을 확인한 뒤 적용할 수 있습니다.
