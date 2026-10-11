@@ -89,6 +89,12 @@ public class AgentRun {
     @Column(length = 1000)
     private String errorRecommendedAction;
 
+    @Column(length = 36)
+    private String retryOfRunId;
+
+    @Column(length = 36)
+    private String retriedByRunId;
+
     private Integer inputTokens;
     private Integer outputTokens;
 
@@ -126,6 +132,21 @@ public class AgentRun {
         run.createdAt = Instant.now();
         run.updatedAt = run.createdAt;
         return run;
+    }
+
+    public static AgentRun retryOf(AgentRun source) {
+        AgentRun retry = draft(source.project, source.prompt, source.executionMode,
+                source.preferredGenerationProvider, source.preferredModel);
+        retry.retryOfRunId = source.id;
+        return retry;
+    }
+
+    public void markRetriedBy(String runId) {
+        if (this.retriedByRunId != null && !this.retriedByRunId.equals(runId)) {
+            throw new IllegalStateException("이미 재시도 실행이 생성되었습니다.");
+        }
+        this.retriedByRunId = runId;
+        touch();
     }
 
     public void requestCancellation() {
@@ -287,6 +308,8 @@ public class AgentRun {
     public ProviderErrorCode getProviderErrorCode() { return providerErrorCode; }
     public Boolean getErrorRetryable() { return errorRetryable; }
     public String getErrorRecommendedAction() { return errorRecommendedAction; }
+    public String getRetryOfRunId() { return retryOfRunId; }
+    public String getRetriedByRunId() { return retriedByRunId; }
     public Integer getInputTokens() { return inputTokens; }
     public Integer getOutputTokens() { return outputTokens; }
     public int getProviderRetryCount() { return providerRetryCount; }

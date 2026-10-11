@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { api } from '../api'
 import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, Project, TaskDecomposition } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
@@ -108,6 +108,19 @@ export default function RunsView({ project, notify }: { project: Project; notify
     } finally { setWorkingId(null) }
   }
 
+  const retry = async (runId: string) => {
+    setWorkingId(runId)
+    try {
+      const queued = await api.runs.retry(project.id, runId)
+      await load()
+      setSelectedRun(queued)
+      setProgress(await api.runs.progress(project.id, queued.runId))
+      notify('동일한 입력 조건으로 새 AI 실행을 시작했습니다.')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'AI 실행을 재시도하지 못했습니다.', 'error')
+    } finally { setWorkingId(null) }
+  }
+
   const planOf = (run: AgentRun): AgentPlan | null => {
     if (!run.planJson) return null
     try { return JSON.parse(run.planJson) as AgentPlan } catch { return null }
@@ -160,6 +173,9 @@ export default function RunsView({ project, notify }: { project: Project; notify
       providerErrorCode: run.providerErrorCode,
       errorRetryable: run.errorRetryable,
       errorRecommendedAction: run.errorRecommendedAction,
+      providerRetryCount: run.providerRetryCount,
+      retryOfRunId: run.retryOfRunId,
+      retriedByRunId: run.retriedByRunId,
       model: run.model,
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
@@ -288,6 +304,8 @@ export default function RunsView({ project, notify }: { project: Project; notify
               {selectedRun.providerErrorCode && <><dt>오류 코드</dt><dd><code>{selectedRun.providerErrorCode}</code></dd></>}
               {selectedRun.errorRetryable != null && <><dt>재시도</dt><dd>{selectedRun.errorRetryable ? '가능' : '설정 확인 필요'}</dd></>}
               {selectedRun.errorRecommendedAction && <><dt>권장 조치</dt><dd>{selectedRun.errorRecommendedAction}</dd></>}
+              {selectedRun.retryOfRunId && <><dt>재시도 원본</dt><dd><code>{selectedRun.retryOfRunId}</code></dd></>}
+              {selectedRun.retriedByRunId && <><dt>후속 재시도</dt><dd><code>{selectedRun.retriedByRunId}</code></dd></>}
               <dt>실행 ID</dt><dd><code>{selectedRun.runId}</code></dd>
               {decision && <><dt>AI 판단</dt><dd>{decision.actionType} · 위험도 {decision.riskLevel} · 대상 {decision.targetPath || '자동 선택'}</dd></>}
               {decision?.taskScopes && decision.taskScopes.length > 0 && <><dt>작업 분해</dt><dd><ol className="decision-task-list">{decision.taskScopes.map((scope, index) => <li key={`${scope.instruction}-${index}`}><strong>{scope.instruction}</strong>{scope.tags.length > 0 && <small>{scope.tags.join(' · ')}</small>}</li>)}</ol></dd></>}
@@ -314,6 +332,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
           <div className="run-detail-actions">
             {selectedRun.status === 'DRAFT' && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => execute(selectedRun.runId, false)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}실행</button>}
             {selectedRun.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => execute(selectedRun.runId, true)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{selectedRun.planJson ? '승인 및 적용' : '승인하고 계속'}</button>}
+            {selectedRun.status === 'FAILED' && selectedRun.errorRetryable === true && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => retry(selectedRun.runId)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}다시 실행</button>}
             {cancellableStatuses.has(selectedRun.status) && <button className="secondary-button danger-text" disabled={workingId === selectedRun.runId} onClick={() => cancel(selectedRun.runId)}><Ban size={15} />취소</button>}
           </div>
         </div>
@@ -377,6 +396,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
                 <button className="icon-button" disabled={workingId === run.runId} onClick={() => refreshOne(run.runId)} title="실행 단건 조회"><RefreshCw className={workingId === run.runId ? 'spin' : ''} size={15} /></button>
                 {run.status === 'DRAFT' && <button className="primary-button" disabled={workingId === run.runId} onClick={() => execute(run.runId, false)}>{workingId === run.runId ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}실행</button>}
                 {run.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === run.runId} onClick={() => execute(run.runId, true)}>{workingId === run.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{operations.length > 0 ? '승인 및 적용' : '승인하고 계속'}</button>}
+                {run.status === 'FAILED' && run.errorRetryable === true && <button className="primary-button" disabled={workingId === run.runId} onClick={() => retry(run.runId)}>{workingId === run.runId ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}재시도</button>}
                 {cancellableStatuses.has(run.status) && <button className="secondary-button danger-text" disabled={workingId === run.runId} onClick={() => cancel(run.runId)}><Ban size={15} />취소</button>}
               </div>
             </article>

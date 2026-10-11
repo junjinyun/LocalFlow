@@ -10,6 +10,7 @@ import com.localflow.domain.agent.service.AgentRunCancellationService;
 import com.localflow.domain.agent.service.AgentRunDispatchService;
 import com.localflow.domain.agent.service.AgentRunProgressService;
 import com.localflow.domain.agent.service.AgentRunService;
+import com.localflow.domain.agent.service.AgentRunRetryService;
 import com.localflow.global.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,17 +34,20 @@ public class AgentRunController {
     private final AgentRunCancellationService cancellationService;
     private final AgentRunDispatchService dispatchService;
     private final AgentRunProgressService progressService;
+    private final AgentRunRetryService retryService;
 
     public AgentRunController(AgentRunService agentRunService,
                               AgentExecutionService agentExecutionService,
                               AgentRunCancellationService cancellationService,
                               AgentRunDispatchService dispatchService,
-                              AgentRunProgressService progressService) {
+                              AgentRunProgressService progressService,
+                              AgentRunRetryService retryService) {
         this.agentRunService = agentRunService;
         this.agentExecutionService = agentExecutionService;
         this.cancellationService = cancellationService;
         this.dispatchService = dispatchService;
         this.progressService = progressService;
+        this.retryService = retryService;
     }
 
     @Operation(summary = "에이전트 비동기 실행 요청 또는 승인 후 작업 재개")
@@ -100,5 +104,13 @@ public class AgentRunController {
     public ApiResponse<AgentRunResponse> cancel(@PathVariable String projectId,
                                                @PathVariable String runId) {
         return ApiResponse.success(cancellationService.request(projectId, runId));
+    }
+
+    @Operation(summary = "실패한 에이전트 실행을 동일 조건으로 재시도")
+    @PostMapping("/{runId}/retry")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<AgentRunResponse> retry(@PathVariable String projectId,
+                                              @PathVariable String runId) {
+        return ApiResponse.success(retryService.retry(projectId, runId));
     }
 }
