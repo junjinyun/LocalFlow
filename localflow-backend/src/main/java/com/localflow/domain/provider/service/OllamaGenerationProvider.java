@@ -53,7 +53,7 @@ public class OllamaGenerationProvider implements GenerationProvider {
     @Override
     public GenerationResult generate(GenerationRequest request) {
         OllamaStatus status = status(false);
-        if (!status.available()) throw new ProviderCallException(providerType(), status.message());
+        if (!status.available()) throw ProviderCallException.notConfigured(providerType(), status.message());
         ObjectNode body = objectMapper.createObjectNode();
         String model = request.model() == null || request.model().isBlank() ? properties.model() : request.model();
         body.put("model", model);
@@ -75,7 +75,8 @@ public class OllamaGenerationProvider implements GenerationProvider {
                 properties.baseUrl().replaceAll("/+$", "") + "/api/chat", body, Map.of(),
                 properties.requestTimeout()));
         String text = response.path("message").path("content").asText();
-        if (text.isBlank()) throw new ProviderCallException(providerType(), "Ollama 응답에 텍스트가 없습니다.");
+        if (text.isBlank()) throw ProviderCallException.invalidResponse(
+                providerType(), "Ollama 응답에 처리할 텍스트가 없습니다.");
         return new GenerationResult(text, response.path("model").asText(model),
                 integerOrNull(response.get("prompt_eval_count")), integerOrNull(response.get("eval_count")));
     }

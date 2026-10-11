@@ -121,7 +121,7 @@ export default function ChatView({ project, providers, notify }: Props) {
           } else if (run.status === 'WAITING_APPROVAL') {
             notify('계획을 만들었습니다. 실행 기록에서 승인해 주세요.')
           } else if (run.status === 'FAILED') {
-            notify(run.errorMessage || 'AI 실행에 실패했습니다.', 'error')
+            notify([run.errorMessage, run.errorRecommendedAction].filter(Boolean).join(' ') || 'AI 실행에 실패했습니다.', 'error')
           } else if (run.status === 'CANCELLED') {
             notify('AI 작업을 취소했습니다.')
           }

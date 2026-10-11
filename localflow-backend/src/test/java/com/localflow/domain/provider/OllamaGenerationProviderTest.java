@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.GenerationRequest;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 import com.localflow.domain.provider.exception.ProviderCallException;
 import com.localflow.domain.provider.service.OllamaExecutionCoordinator;
 import com.localflow.domain.provider.service.OllamaGenerationProvider;
@@ -77,8 +78,11 @@ class OllamaGenerationProviderTest {
 
             assertThatThrownBy(() -> provider.generate(
                     new GenerationRequest("system", "user", "qwen2.5-coder:3b")))
-                    .isInstanceOf(ProviderCallException.class)
-                    .hasMessageContaining("AI 제공자 요청에 실패했습니다");
+                    .isInstanceOfSatisfying(ProviderCallException.class, exception -> {
+                        assertThat(exception.errorCode()).isEqualTo(ProviderErrorCode.TIMEOUT);
+                        assertThat(exception.retryable()).isTrue();
+                        assertThat(exception.userMessage()).contains("응답 시간이 초과");
+                    });
         } finally {
             server.stop(0);
         }

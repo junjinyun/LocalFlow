@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.localflow.domain.provider.domain.AiProviderType;
 import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GenerationResult;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 import com.localflow.domain.provider.exception.StructuredOutputException;
 import com.localflow.domain.provider.port.GenerationProvider;
 import com.localflow.domain.provider.service.StructuredGenerationService;
@@ -54,11 +55,12 @@ class StructuredGenerationServiceTest {
                 new GenerationRequest("system", "user", "qwen"),
                 text -> { throw new IllegalArgumentException("invalid json"); },
                 "작업 분해"))
-                .isInstanceOf(StructuredOutputException.class)
-                .hasMessageContaining("OLLAMA")
-                .hasMessageContaining("작업 분해")
-                .hasMessageContaining("2회")
-                .hasMessageContaining("JSON Schema");
+                .isInstanceOfSatisfying(StructuredOutputException.class, exception -> {
+                    assertThat(exception.errorCode()).isEqualTo(ProviderErrorCode.INVALID_RESPONSE);
+                    assertThat(exception.retryable()).isFalse();
+                    assertThat(exception.userMessage()).contains("OLLAMA", "작업 분해", "다른 모델");
+                    assertThat(exception.diagnosticMessage()).contains("2 attempts");
+                });
     }
 
     private static class FakeProvider implements GenerationProvider {

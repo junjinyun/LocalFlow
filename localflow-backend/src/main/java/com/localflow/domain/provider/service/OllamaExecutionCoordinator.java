@@ -33,7 +33,7 @@ public class OllamaExecutionCoordinator {
         try {
             acquired = permits.tryAcquire(queueTimeout.toMillis(), TimeUnit.MILLISECONDS);
             if (!acquired) {
-                throw new ProviderCallException(AiProviderType.OLLAMA,
+                throw ProviderCallException.timeout(AiProviderType.OLLAMA,
                         "Ollama 실행 대기 시간이 " + describe(queueTimeout)
                                 + "을 초과했습니다. 다른 작업이 끝난 뒤 다시 시도해 주세요.");
             }
@@ -44,7 +44,7 @@ public class OllamaExecutionCoordinator {
             return result;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new ProviderCallException(AiProviderType.OLLAMA,
+            throw ProviderCallException.timeout(AiProviderType.OLLAMA,
                     "Ollama 실행 대기 중 요청이 중단되었습니다.", exception);
         } finally {
             if (!acquired) waiting.updateAndGet(value -> Math.max(0, value - 1));

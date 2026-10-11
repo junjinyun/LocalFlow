@@ -64,6 +64,11 @@ export type ProjectMemory = {
 }
 
 export type ProviderType = 'JEV' | 'OPENAI' | 'VERTEX_AI' | 'OLLAMA' | 'GEMINI_CLI'
+export type ProviderErrorCode =
+  | 'NOT_CONFIGURED' | 'AUTHENTICATION_FAILED' | 'PERMISSION_DENIED'
+  | 'QUOTA_EXCEEDED' | 'RATE_LIMITED' | 'TIMEOUT' | 'NETWORK_ERROR'
+  | 'MODEL_NOT_SUPPORTED' | 'INVALID_RESPONSE' | 'REQUEST_REJECTED'
+  | 'SERVICE_UNAVAILABLE' | 'UNKNOWN'
 export type Provider = {
   type: ProviderType; role: 'DECISION' | 'GENERATION'; displayName: string; credentialType: string
   implemented: boolean; configured: boolean; reachable: boolean | null; modelInstalled: boolean | null
@@ -128,6 +133,8 @@ export type AgentRun = {
   inputSnapshotJson: string | null
   applicationResultJson: string | null
   resultMessage: string | null; errorMessage: string | null; model: string | null
+  providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
+  errorRecommendedAction: string | null
   inputTokens: number | null; outputTokens: number | null
   createdAt: string; updatedAt: string; completedAt: string | null
   cancelRequestedAt: string | null; cancelledAt: string | null
@@ -154,5 +161,7 @@ export type AgentRunSummary = {
     action: FileOperation['action']; path: string; destinationPath: string | null
   }>
   errorMessage: string | null; model: string | null
+  providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
+  errorRecommendedAction: string | null
   createdAt: string; updatedAt: string; completedAt: string | null
 }

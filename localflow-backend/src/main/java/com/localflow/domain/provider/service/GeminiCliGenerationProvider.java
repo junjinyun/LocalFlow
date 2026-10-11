@@ -20,6 +20,7 @@ public class GeminiCliGenerationProvider implements GenerationProvider {
     private final GeminiCliStatusService statusService;
     private final GeminiCliExecutionCoordinator executionCoordinator;
     private final ObjectMapper objectMapper;
+    private final ProviderErrorMapper errorMapper = new ProviderErrorMapper();
 
     public GeminiCliGenerationProvider(AiProviderProperties properties,
                                        GeminiCliProcessExecutor executor,
@@ -54,12 +55,13 @@ public class GeminiCliGenerationProvider implements GenerationProvider {
     @Override
     public GenerationResult generate(GenerationRequest request) {
         GeminiCliStatus status = status(false);
-        if (!status.available()) throw new ProviderCallException(providerType(), status.message());
+        if (!status.available()) throw ProviderCallException.notConfigured(providerType(), status.message());
         String selectedModel = selectedModel(request.model());
         GeminiCliProcessExecutor.ProcessResult result = executionCoordinator.execute(() -> executor.execute(
                 arguments(selectedModel), prompt(request), properties.requestTimeout()));
         if (result.exitCode() != 0) {
-            throw new ProviderCallException(providerType(), failureMessage(result));
+            String raw = result.stderr().isBlank() ? result.stdout() : result.stderr();
+            throw errorMapper.fromCli(providerType(), result.exitCode(), raw);
         }
         return parse(result.stdout(), selectedModel);
     }
@@ -95,7 +97,8 @@ public class GeminiCliGenerationProvider implements GenerationProvider {
             JsonNode root = objectMapper.readTree(output);
             String response = root.path("response").asText();
             if (response.isBlank()) {
-                throw new ProviderCallException(providerType(), "Gemini CLI 응답에 텍스트가 없습니다.");
+                throw ProviderCallException.invalidResponse(
+                        providerType(), "Gemini CLI 응답에 처리할 텍스트가 없습니다.");
             }
             JsonNode stats = root.path("stats");
             return new GenerationResult(response, detectedModel(stats, fallbackModel),
@@ -104,8 +107,8 @@ public class GeminiCliGenerationProvider implements GenerationProvider {
         } catch (ProviderCallException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new ProviderCallException(providerType(),
-                    "Gemini CLI JSON 응답을 해석하지 못했습니다.", exception);
+            throw errorMapper.invalidResponse(providerType(),
+                    "Gemini CLI output was not valid JSON: " + exception.getClass().getSimpleName());
         }
     }
 
@@ -127,11 +130,4 @@ public class GeminiCliGenerationProvider implements GenerationProvider {
         return requested == null || requested.isBlank() ? properties.model() : requested.strip();
     }
 
-    private String failureMessage(GeminiCliProcessExecutor.ProcessResult result) {
-        String raw = result.stderr().isBlank() ? result.stdout() : result.stderr();
-        String value = raw.replaceAll("\\s+", " ").strip();
-        if (value.isBlank()) value = "종료 코드 " + result.exitCode();
-        if (value.length() > 600) value = value.substring(0, 600) + "…";
-        return "Gemini CLI 호출에 실패했습니다. 로그인, 사용량 한도와 모델 접근 권한을 확인해 주세요. (" + value + ")";
-    }
 }

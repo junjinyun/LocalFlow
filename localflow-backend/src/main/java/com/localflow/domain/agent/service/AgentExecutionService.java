@@ -25,6 +25,8 @@ import com.localflow.domain.provider.domain.DecisionResult;
 import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GenerationResult;
 import com.localflow.domain.provider.port.GenerationProvider;
+import com.localflow.domain.provider.exception.ProviderCallException;
+import com.localflow.domain.provider.service.SensitiveDataMasker;
 import com.localflow.domain.provider.service.OllamaGenerationProvider;
 import com.localflow.domain.provider.service.OllamaLocalPolicy;
 import com.localflow.domain.provider.service.StructuredGenerationService;
@@ -41,9 +43,12 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class AgentExecutionService {
+    private static final Logger log = LoggerFactory.getLogger(AgentExecutionService.class);
     private final AgentRunService runService;
     private final AgentRunRepository runRepository;
     private final AgentDecisionService decisionService;
@@ -263,7 +268,16 @@ public class AgentExecutionService {
                 cancellationService.complete(projectId, runId);
                 return;
             }
-            run.fail(safeMessage(exception));
+            if (exception instanceof ProviderCallException providerException) {
+                log.warn("Agent provider execution failed: runId={}, provider={}, code={}, retryable={}, diagnostic={}",
+                        runId, providerException.providerType(), providerException.errorCode(),
+                        providerException.retryable(),
+                        SensitiveDataMasker.mask(providerException.diagnosticMessage()));
+                run.failProvider(providerException.getMessage(), providerException.errorCode(),
+                        providerException.retryable(), providerException.recommendedAction());
+            } else {
+                run.fail(safeMessage(exception));
+            }
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.FAILED,
                     "작업을 완료하지 못했습니다: " + safeMessage(exception));
@@ -494,6 +508,7 @@ public class AgentExecutionService {
     }
 
     private String safeMessage(Exception exception) {
+        if (exception instanceof ProviderCallException provider) return provider.userMessage();
         if (exception instanceof CustomException custom) return custom.errorCode().message();
         String message = exception.getMessage();
         if (message == null || message.isBlank()) return "AI 실행 중 오류가 발생했습니다.";
