@@ -4,6 +4,7 @@ import com.localflow.domain.agent.domain.AgentRunStatus;
 import com.localflow.domain.agent.domain.ExecutionMode;
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.provider.domain.AiProviderType;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -79,6 +80,15 @@ public class AgentRun {
     @Column(length = 2000)
     private String errorMessage;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 40)
+    private ProviderErrorCode providerErrorCode;
+
+    private Boolean errorRetryable;
+
+    @Column(length = 1000)
+    private String errorRecommendedAction;
+
     private Integer inputTokens;
     private Integer outputTokens;
 
@@ -134,6 +144,9 @@ public class AgentRun {
     public void queue() {
         this.status = AgentRunStatus.PENDING;
         this.errorMessage = null;
+        this.providerErrorCode = null;
+        this.errorRetryable = null;
+        this.errorRecommendedAction = null;
         this.completedAt = null;
         touch();
     }
@@ -222,6 +235,20 @@ public class AgentRun {
 
     public void fail(String message) {
         this.errorMessage = message == null ? "알 수 없는 실행 오류" : message;
+        this.providerErrorCode = null;
+        this.errorRetryable = false;
+        this.errorRecommendedAction = null;
+        this.status = AgentRunStatus.FAILED;
+        this.completedAt = Instant.now();
+        touch();
+    }
+
+    public void failProvider(String message, ProviderErrorCode errorCode,
+                             boolean retryable, String recommendedAction) {
+        this.errorMessage = message == null ? "AI 제공자 호출에 실패했습니다." : message;
+        this.providerErrorCode = errorCode;
+        this.errorRetryable = retryable;
+        this.errorRecommendedAction = recommendedAction;
         this.status = AgentRunStatus.FAILED;
         this.completedAt = Instant.now();
         touch();
@@ -246,6 +273,9 @@ public class AgentRun {
     public String getResultMessage() { return resultMessage; }
     public String getApplicationResultJson() { return applicationResultJson; }
     public String getErrorMessage() { return errorMessage; }
+    public ProviderErrorCode getProviderErrorCode() { return providerErrorCode; }
+    public Boolean getErrorRetryable() { return errorRetryable; }
+    public String getErrorRecommendedAction() { return errorRecommendedAction; }
     public Integer getInputTokens() { return inputTokens; }
     public Integer getOutputTokens() { return outputTokens; }
     public Instant getCreatedAt() { return createdAt; }

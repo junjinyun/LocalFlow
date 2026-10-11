@@ -6,6 +6,7 @@ import com.localflow.domain.agent.domain.ExecutionMode;
 import com.localflow.domain.agent.domain.FileOperationAction;
 import com.localflow.domain.agent.entity.AgentRun;
 import com.localflow.domain.provider.domain.AiProviderType;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 import java.time.Instant;
 import java.util.List;
 
@@ -22,6 +23,9 @@ public record AgentRunSummaryResponse(
         String resultSummary,
         List<FileChangeSummary> fileChanges,
         String errorMessage,
+        ProviderErrorCode providerErrorCode,
+        Boolean errorRetryable,
+        String errorRecommendedAction,
         String model,
         Instant createdAt,
         Instant updatedAt,
@@ -37,7 +41,8 @@ public record AgentRunSummaryResponse(
         return new AgentRunSummaryResponse(run.getId(), run.getProject().getId(), run.getPrompt(),
                 run.getExecutionMode(), run.getPreferredGenerationProvider(),
                 run.getPreferredModel(), run.getActualGenerationProvider(), run.getStatus(), AgentRunResponse.notice(run),
-                summary, changes, run.getErrorMessage(), run.getModel(),
+                summary, changes, run.getErrorMessage(), run.getProviderErrorCode(),
+                run.getErrorRetryable(), run.getErrorRecommendedAction(), run.getModel(),
                 run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt());
     }
 

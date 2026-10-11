@@ -36,7 +36,8 @@ public class OpenAiGenerationProvider implements GenerationProvider {
 
     @Override
     public GenerationResult generate(GenerationRequest request) {
-        if (!available()) throw new ProviderCallException(providerType(), "OPENAI_API_KEY가 설정되지 않았습니다.");
+        if (!available()) throw ProviderCallException.notConfigured(
+                providerType(), "OpenAI API가 설정되지 않았습니다.");
         ObjectNode body = objectMapper.createObjectNode();
         String model = request.model() == null || request.model().isBlank() ? properties.model() : request.model();
         body.put("model", model);
@@ -56,7 +57,8 @@ public class OpenAiGenerationProvider implements GenerationProvider {
                 }
             }
         }
-        if (text.isEmpty()) throw new ProviderCallException(providerType(), "OpenAI 응답에 텍스트가 없습니다.");
+        if (text.isEmpty()) throw ProviderCallException.invalidResponse(
+                providerType(), "OpenAI 응답에 처리할 텍스트가 없습니다.");
         JsonNode usage = response.path("usage");
         return new GenerationResult(text.toString(), response.path("model").asText(model),
                 integerOrNull(usage.get("input_tokens")), integerOrNull(usage.get("output_tokens")));

@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GeminiCliStatus;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 import com.localflow.domain.provider.exception.ProviderCallException;
 import com.localflow.domain.provider.service.GeminiCliExecutionCoordinator;
 import com.localflow.domain.provider.service.GeminiCliGenerationProvider;
@@ -49,9 +50,12 @@ class GeminiCliGenerationProviderTest {
 
         assertThatThrownBy(() -> fixture.provider.generate(new GenerationRequest(
                 "JSON으로 응답", "작업", "auto")))
-                .isInstanceOf(ProviderCallException.class)
-                .hasMessageContaining("로그인, 사용량 한도")
-                .hasMessageContaining("RESOURCE_EXHAUSTED");
+                .isInstanceOfSatisfying(ProviderCallException.class, exception -> {
+                    assertThat(exception.errorCode()).isEqualTo(ProviderErrorCode.QUOTA_EXCEEDED);
+                    assertThat(exception.retryable()).isFalse();
+                    assertThat(exception.userMessage()).contains("사용량", "확인");
+                    assertThat(exception.userMessage()).doesNotContain("RESOURCE_EXHAUSTED");
+                });
     }
 
     private Fixture fixture() {

@@ -11,6 +11,7 @@ import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.AiProviderType;
 import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GenerationResult;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 import com.localflow.domain.provider.exception.ProviderCallException;
 import com.localflow.domain.provider.port.GenerationProvider;
 import java.io.ByteArrayInputStream;
@@ -56,8 +57,8 @@ public class VertexAiGenerationProvider implements GenerationProvider {
     @Override
     public GenerationResult generate(GenerationRequest request) {
         if (!available()) {
-            throw new ProviderCallException(providerType(),
-                    "VERTEX_AI_SERVICE_ACCOUNT_BASE64와 VERTEX_AI_PROJECT 설정을 확인해 주세요.");
+            throw ProviderCallException.notConfigured(providerType(),
+                    "Google Cloud Vertex AI 서비스 계정 설정이 올바르지 않습니다.");
         }
         String model = request.model() == null || request.model().isBlank() ? properties.model() : request.model();
         String token = accessToken();
@@ -83,7 +84,8 @@ public class VertexAiGenerationProvider implements GenerationProvider {
             }
             if (!text.isEmpty()) break;
         }
-        if (text.isEmpty()) throw new ProviderCallException(providerType(), "Vertex AI 응답에 텍스트가 없습니다.");
+        if (text.isEmpty()) throw ProviderCallException.invalidResponse(
+                providerType(), "Vertex AI 응답에 처리할 텍스트가 없습니다.");
         JsonNode usage = response.path("usageMetadata");
         return new GenerationResult(text.toString(), model,
                 integerOrNull(usage.get("promptTokenCount")),
@@ -102,9 +104,10 @@ public class VertexAiGenerationProvider implements GenerationProvider {
             }
             return token.getTokenValue();
         } catch (Exception exception) {
-            throw new ProviderCallException(providerType(),
-                    "Vertex AI 서비스 계정 인증에 실패했습니다. Base64 값과 서비스 계정 권한을 확인해 주세요.",
-                    exception);
+            throw new ProviderCallException(providerType(), ProviderErrorCode.AUTHENTICATION_FAILED,
+                    "Vertex AI 서비스 계정 인증에 실패했습니다.", false,
+                    "Base64 값, Vertex AI API 활성화 여부와 서비스 계정 권한을 확인해 주세요.",
+                    "Vertex credential refresh failed: " + exception.getClass().getSimpleName(), exception);
         }
     }
 
@@ -118,9 +121,11 @@ public class VertexAiGenerationProvider implements GenerationProvider {
                 return ServiceAccountCredentials.fromStream(input);
             }
         } catch (Exception exception) {
-            throw new ProviderCallException(providerType(),
-                    "VERTEX_AI_SERVICE_ACCOUNT_BASE64가 올바른 서비스 계정 JSON의 Base64 값이 아닙니다.",
-                    exception);
+            throw new ProviderCallException(providerType(), ProviderErrorCode.NOT_CONFIGURED,
+                    "Vertex AI 서비스 계정 정보 형식이 올바르지 않습니다.", false,
+                    "서비스 계정 JSON 전체를 Base64로 인코딩한 값을 다시 입력해 주세요.",
+                    "Vertex service account Base64 decode failed: "
+                            + exception.getClass().getSimpleName(), exception);
         }
     }
 

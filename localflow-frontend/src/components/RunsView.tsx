@@ -157,6 +157,9 @@ export default function RunsView({ project, notify }: { project: Project; notify
         destinationPath: operation.destinationPath,
       })) ?? [],
       errorMessage: run.errorMessage,
+      providerErrorCode: run.providerErrorCode,
+      errorRetryable: run.errorRetryable,
+      errorRecommendedAction: run.errorRecommendedAction,
       model: run.model,
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
@@ -281,6 +284,9 @@ export default function RunsView({ project, notify }: { project: Project; notify
               <dt>AI 제공자</dt><dd>{selectedRun.actualGenerationProvider || selectedRun.preferredGenerationProvider || '지정되지 않음'}</dd>
               <dt>모델</dt><dd>{selectedRun.model || decision?.model || '확인되지 않음'}</dd>
               <dt>토큰</dt><dd>입력 {selectedRun.inputTokens ?? 0} · 출력 {selectedRun.outputTokens ?? 0}</dd>
+              {selectedRun.providerErrorCode && <><dt>오류 코드</dt><dd><code>{selectedRun.providerErrorCode}</code></dd></>}
+              {selectedRun.errorRetryable != null && <><dt>재시도</dt><dd>{selectedRun.errorRetryable ? '가능' : '설정 확인 필요'}</dd></>}
+              {selectedRun.errorRecommendedAction && <><dt>권장 조치</dt><dd>{selectedRun.errorRecommendedAction}</dd></>}
               <dt>실행 ID</dt><dd><code>{selectedRun.runId}</code></dd>
               {decision && <><dt>AI 판단</dt><dd>{decision.actionType} · 위험도 {decision.riskLevel} · 대상 {decision.targetPath || '자동 선택'}</dd></>}
               {decision?.taskScopes && decision.taskScopes.length > 0 && <><dt>작업 분해</dt><dd><ol className="decision-task-list">{decision.taskScopes.map((scope, index) => <li key={`${scope.instruction}-${index}`}><strong>{scope.instruction}</strong>{scope.tags.length > 0 && <small>{scope.tags.join(' · ')}</small>}</li>)}</ol></dd></>}

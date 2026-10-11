@@ -1,12 +1,15 @@
 package com.localflow.domain.provider.exception;
 
 import com.localflow.domain.provider.domain.AiProviderType;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 
-public class StructuredOutputException extends RuntimeException {
+public class StructuredOutputException extends ProviderCallException {
     public StructuredOutputException(AiProviderType provider, String responseName,
                                      int attempts, Throwable cause) {
-        super(provider + "가 " + responseName + " 구조화 응답을 " + attempts
-                + "회 생성했지만 형식을 해석하지 못했습니다. 모델과 JSON Schema 설정을 확인해 주세요.",
+        super(provider, ProviderErrorCode.INVALID_RESPONSE,
+                provider + "가 " + responseName + " 응답을 올바른 형식으로 반환하지 못했습니다.",
+                false, "다른 모델을 선택하거나 프롬프트 범위를 줄여 다시 시도해 주세요.",
+                provider + " structured output parsing failed after " + attempts + " attempts",
                 cause);
     }
 }

@@ -47,7 +47,8 @@ public class JevDecisionProvider implements DecisionProvider {
     @Override
     public DecisionResult decide(DecisionRequest request) {
         if (!available()) {
-            throw new ProviderCallException(providerType(), "OPENROUTER_API_KEY가 설정되지 않았습니다.");
+            throw ProviderCallException.notConfigured(
+                    providerType(), "OpenRouter/JEV API가 설정되지 않았습니다.");
         }
 
         Map<String, String> targets = targets(request.candidateFiles());

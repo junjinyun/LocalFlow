@@ -3,6 +3,7 @@ package com.localflow.domain.agent.dto.response;
 import com.localflow.domain.agent.domain.AgentRunStatus;
 import com.localflow.domain.agent.domain.ExecutionMode;
 import com.localflow.domain.provider.domain.AiProviderType;
+import com.localflow.domain.provider.domain.ProviderErrorCode;
 import java.time.Instant;
 import com.localflow.domain.agent.entity.AgentRun;
 
@@ -24,6 +25,9 @@ public record AgentRunResponse(
         String applicationResultJson,
         String resultMessage,
         String errorMessage,
+        ProviderErrorCode providerErrorCode,
+        Boolean errorRetryable,
+        String errorRecommendedAction,
         String model,
         Integer inputTokens,
         Integer outputTokens,
@@ -39,7 +43,8 @@ public record AgentRunResponse(
                 run.getPreferredModel(), run.getActualGenerationProvider(), run.getStatus(), notice(run),
                 run.getDecompositionJson(), run.getDecisionJson(), run.getPlanJson(), run.getChangesJson(),
                 run.getInputSnapshotJson(), run.getApplicationResultJson(), run.getResultMessage(),
-                run.getErrorMessage(), run.getModel(), run.getInputTokens(), run.getOutputTokens(),
+                run.getErrorMessage(), run.getProviderErrorCode(), run.getErrorRetryable(),
+                run.getErrorRecommendedAction(), run.getModel(), run.getInputTokens(), run.getOutputTokens(),
                 run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt(),
                 run.getCancelRequestedAt(), run.getCancelledAt());
     }

@@ -1,0 +1,16 @@
+package com.localflow.domain.provider.domain;
+
+public enum ProviderErrorCode {
+    NOT_CONFIGURED,
+    AUTHENTICATION_FAILED,
+    PERMISSION_DENIED,
+    QUOTA_EXCEEDED,
+    RATE_LIMITED,
+    TIMEOUT,
+    NETWORK_ERROR,
+    MODEL_NOT_SUPPORTED,
+    INVALID_RESPONSE,
+    REQUEST_REJECTED,
+    SERVICE_UNAVAILABLE,
+    UNKNOWN
+}

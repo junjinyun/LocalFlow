@@ -10,11 +10,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ProviderHttpClient {
+    private static final Logger log = LoggerFactory.getLogger(ProviderHttpClient.class);
     private final ObjectMapper objectMapper;
+    private final ProviderErrorMapper errorMapper = new ProviderErrorMapper();
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
@@ -47,20 +51,32 @@ public class ProviderHttpClient {
 
     private JsonNode send(AiProviderType providerType, HttpRequest.Builder builder,
                           Map<String, String> headers) {
+        HttpResponse<String> response;
         try {
             headers.forEach(builder::header);
-            HttpResponse<String> response = httpClient.send(builder.build(),
+            response = httpClient.send(builder.build(),
                     HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new ProviderCallException(providerType,
-                        "HTTP " + response.statusCode() + ": " + abbreviate(response.body()));
-            }
-            return objectMapper.readTree(response.body());
         } catch (ProviderCallException exception) {
+            logFailure(exception);
             throw exception;
         } catch (Exception exception) {
-            throw new ProviderCallException(providerType,
-                    "AI 제공자 요청에 실패했습니다: " + exception.getMessage(), exception);
+            ProviderCallException mapped = errorMapper.fromThrowable(providerType, exception);
+            logFailure(mapped);
+            throw mapped;
+        }
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            ProviderCallException mapped = errorMapper.fromHttp(
+                    providerType, response.statusCode(), response.body());
+            logFailure(mapped);
+            throw mapped;
+        }
+        try {
+            return objectMapper.readTree(response.body());
+        } catch (Exception exception) {
+            ProviderCallException mapped = errorMapper.invalidResponse(providerType,
+                    "HTTP " + response.statusCode() + " response was not valid JSON");
+            logFailure(mapped);
+            throw mapped;
         }
     }
 
@@ -68,13 +84,19 @@ public class ProviderHttpClient {
         try {
             return objectMapper.writeValueAsString(body);
         } catch (Exception exception) {
-            throw new ProviderCallException(providerType,
-                    "AI 제공자 요청 본문 생성에 실패했습니다: " + exception.getMessage(), exception);
+            ProviderCallException mapped = new ProviderCallException(providerType,
+                    com.localflow.domain.provider.domain.ProviderErrorCode.REQUEST_REJECTED,
+                    "AI 요청을 생성하지 못했습니다.", false,
+                    "입력 내용과 요청 크기를 확인해 주세요.",
+                    SensitiveDataMasker.mask(exception.getMessage()), exception);
+            logFailure(mapped);
+            throw mapped;
         }
     }
 
-    private String abbreviate(String value) {
-        if (value == null) return "응답 본문 없음";
-        return value.length() <= 800 ? value : value.substring(0, 800) + "…";
+    private void logFailure(ProviderCallException exception) {
+        log.warn("AI provider call failed: provider={}, code={}, retryable={}, diagnostic={}",
+                exception.providerType(), exception.errorCode(), exception.retryable(),
+                SensitiveDataMasker.mask(exception.diagnosticMessage()));
     }
 }
