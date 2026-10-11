@@ -456,6 +456,7 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .tag-chip.custom { border-color: #adc2a4; background: #e5eee0; color: #40563b; }
 .tag-preview { display: flex; gap: 5px; flex-wrap: wrap; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: #f7f8f5; }
 .tag-preview code { padding: 3px 6px; background: #e9ede5; border-radius: 4px; }
+.memory-scope-summary { margin-top: 10px; padding: 7px 9px; border-radius: 6px; background: #f1f4ee; color: #687064; font-size: 11px; line-height: 1.45; }
 @keyframes toast-in { from { transform: translateY(10px); opacity: 0; } }
 
 .center-state, .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #92988f; text-align: center; }

@@ -319,6 +319,10 @@ export default function RunsView({ project, notify }: { project: Project; notify
                   : <ul>{inputSnapshot.contextFiles.map(path => <li key={path}><code>{path}</code></li>)}</ul>}
               </details>
               <details>
+                <summary>AI에 반영한 프로젝트 기억 <span>{inputSnapshot.memories?.length ?? 0}</span><ChevronRight size={15} /></summary>
+                {!inputSnapshot.memories?.length ? <p>관련 범위의 프로젝트 기억을 포함하지 않았습니다.</p> : <ul>{inputSnapshot.memories.map(memory => <li key={memory.id}><code>{memory.title}</code></li>)}</ul>}
+              </details>
+              <details>
                 <summary>시스템 전처리 프롬프트 <ChevronRight size={15} /></summary>
                 <pre>{inputSnapshot.systemPrompt}</pre>
               </details>

@@ -10,6 +10,8 @@ import com.localflow.domain.project.service.ProjectService;
 import com.localflow.global.error.CustomException;
 import com.localflow.global.error.ErrorCode;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +30,9 @@ public class ProjectMemoryService {
     public ProjectMemoryResponse create(String projectId, ProjectMemoryCreateRequest request) {
         Project project = projectService.requireProject(projectId);
         ProjectMemory memory = ProjectMemory.create(project, request.type(),
-                request.title().strip(), request.content().strip());
+                request.title().strip(), request.content().strip(), request.globalScope(),
+                normalize(request.scopeTags()), normalizePaths(request.scopeFilePatterns()),
+                normalize(request.scopeTaskTypes()));
         return ProjectMemoryResponse.from(repository.save(memory));
     }
 
@@ -44,7 +48,9 @@ public class ProjectMemoryService {
     public ProjectMemoryResponse update(String projectId, String memoryId,
                                         ProjectMemoryUpdateRequest request) {
         ProjectMemory memory = requireMemory(projectId, memoryId);
-        memory.update(request.type(), request.title().strip(), request.content().strip(), request.active());
+        memory.update(request.type(), request.title().strip(), request.content().strip(), request.active(),
+                request.globalScope(), normalize(request.scopeTags()),
+                normalizePaths(request.scopeFilePatterns()), normalize(request.scopeTaskTypes()));
         return ProjectMemoryResponse.from(memory);
     }
 
@@ -60,5 +66,15 @@ public class ProjectMemoryService {
             throw new CustomException(ErrorCode.MEMORY_NOT_FOUND);
         }
         return memory;
+    }
+
+    private Set<String> normalize(Set<String> values) {
+        return values.stream().map(String::strip).map(value -> value.toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private Set<String> normalizePaths(Set<String> values) {
+        return values.stream().map(String::strip).map(value -> value.replace('\\', '/'))
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
     }
 }
