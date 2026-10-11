@@ -448,6 +448,14 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .modal > header h2 { margin: 0; font-size: 18px; letter-spacing: -.3px; }
 .toast { position: fixed; z-index: 80; right: 22px; bottom: 20px; max-width: 380px; padding: 13px 16px; color: white; background: #354a33; border: 1px solid #496447; border-radius: 9px; box-shadow: 0 12px 30px #151b1545; font-size: 13px; animation: toast-in .22s ease-out; white-space: pre-line; }
 .toast.error { background: #7d3e39; border-color: #a15a53; }
+.file-tags-panel { min-height: 44px; padding: 7px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fafbf8; }
+.file-tags-panel > div { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.file-tags-panel strong { font-size: 12px; margin-right: 3px; }
+.file-tags-panel small { color: var(--muted); }
+.tag-chip { padding: 3px 7px; border: 1px solid #d9dfd4; border-radius: 999px; background: #f1f4ee; color: #596255; font-size: 11px; }
+.tag-chip.custom { border-color: #adc2a4; background: #e5eee0; color: #40563b; }
+.tag-preview { display: flex; gap: 5px; flex-wrap: wrap; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: #f7f8f5; }
+.tag-preview code { padding: 3px 6px; background: #e9ede5; border-radius: 4px; }
 @keyframes toast-in { from { transform: translateY(10px); opacity: 0; } }
 
 .center-state, .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #92988f; text-align: center; }

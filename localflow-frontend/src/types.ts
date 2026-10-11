@@ -35,6 +35,9 @@ export type ProjectFile = {
   category: 'SOURCE_CODE' | 'TEXT' | 'DOCUMENT' | 'CONFIGURATION'
   language: string | null
   tags: string[]
+  automaticTags: string[]
+  userAddedTags: string[]
+  userExcludedTags: string[]
   sizeBytes: number
   sha256: string
   updatedAt: string

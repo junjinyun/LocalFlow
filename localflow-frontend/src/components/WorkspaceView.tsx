@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   Check, ChevronDown, ChevronRight, Code2, Download, File, FilePlus2, FileText, Folder, FolderOpen,
   GitCompareArrows, LoaderCircle, Move, RefreshCw, Save, Search, Trash2, UploadCloud,
+  Tags,
 } from 'lucide-react'
 import { api } from '../api'
 import type { FileContent, FileSyncResult, Project, ProjectFile } from '../types'
@@ -192,6 +193,10 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState<FileContent | null>(null)
+  const [tagModalOpen, setTagModalOpen] = useState(false)
+  const [addedTagText, setAddedTagText] = useState('')
+  const [excludedTagText, setExcludedTagText] = useState('')
+  const [savingTags, setSavingTags] = useState(false)
   const [editor, setEditor] = useState('')
   const [search, setSearch] = useState('')
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set())
@@ -220,6 +225,32 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
 
   const selected = files.find(file => file.id === selectedId) ?? null
   const dirty = fileContent ? editor !== fileContent.content : false
+
+  const openTagEditor = () => {
+    if (!selected) return
+    setAddedTagText(selected.userAddedTags.join(', '))
+    setExcludedTagText(selected.userExcludedTags.join(', '))
+    setTagModalOpen(true)
+  }
+
+  const parsedTags = (value: string) => Array.from(new Set(value.split(',')
+    .map(tag => tag.trim().toLowerCase()).filter(Boolean)))
+
+  const saveTags = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!selected) return
+    setSavingTags(true)
+    try {
+      const updated = await api.files.updateTags(project.id, selected.id,
+        parsedTags(addedTagText), parsedTags(excludedTagText))
+      setFiles(current => current.map(file => file.id === updated.id ? updated : file))
+      setFileContent(current => current ? { ...current, file: updated } : current)
+      setTagModalOpen(false)
+      notify('파일 태그 보정값을 저장했습니다.')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '파일 태그를 저장하지 못했습니다.', 'error')
+    } finally { setSavingTags(false) }
+  }
   const normalizedSearch = search.trim().toLowerCase()
   const visibleFiles = useMemo(
     () => normalizedSearch ? files.filter(file => file.relativePath.toLowerCase().includes(normalizedSearch)) : files,
@@ -630,6 +661,10 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
                 {fileContent && <button className="small-button accent" onClick={saveCurrent} disabled={!dirty || saving}><Save size={15} />{saving ? '저장 중' : '저장'}</button>}
               </div>
             </div>
+            <div className="file-tags-panel">
+              <div><Tags size={15} /><strong>파일 태그</strong>{selected.tags.length === 0 && <small>태그 없음</small>}{selected.tags.map(tag => <span className={selected.userAddedTags.includes(tag) ? 'tag-chip custom' : 'tag-chip'} key={tag}>{tag}</span>)}</div>
+              <button className="small-button" onClick={openTagEditor}>태그 보정</button>
+            </div>
             {selected.category === 'DOCUMENT' ? (
               <div className="document-preview"><FileText size={38} /><h3>{selected.fileName}</h3><p>문서 본문 미리보기는 확장 기능입니다. 현재는 원본 저장과 다운로드를 지원합니다.</p><a className="primary-button" href={api.files.downloadUrl(project.id, selected.id)}>원본 다운로드</a></div>
             ) : (
@@ -653,6 +688,18 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
             <label>상대 경로<input autoFocus value={newPath} onChange={event => setNewPath(event.target.value)} placeholder="src/main/java/example/NewFile.java" /></label>
             <label>초기 내용<textarea className="tall" value={newContent} onChange={event => setNewContent(event.target.value)} placeholder="파일 내용을 입력하세요." /></label>
             <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setCreateOpen(false)}>취소</button><button className="primary-button" disabled={!newPath.trim()}>파일 생성</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {tagModalOpen && selected && (
+        <Modal title="파일 태그 보정" onClose={() => setTagModalOpen(false)}>
+          <form className="form-stack" onSubmit={saveTags}>
+            <p className="form-help">자동 태그는 재분석되며, 여기서 추가하거나 제외한 값은 이후 동기화에도 유지됩니다.</p>
+            <label>자동 분석 태그<div className="tag-preview">{selected.automaticTags.map(tag => <code key={tag}>{tag}</code>)}</div></label>
+            <label>사용자 추가 태그<input value={addedTagText} onChange={event => setAddedTagText(event.target.value)} placeholder="domain, login, security" /><small>영문·숫자·점·밑줄·하이픈만 사용하며 쉼표로 구분합니다.</small></label>
+            <label>제외할 자동 태그<input value={excludedTagText} onChange={event => setExcludedTagText(event.target.value)} placeholder="api, controller" /></label>
+            <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setTagModalOpen(false)}>취소</button><button className="primary-button" disabled={savingTags}>{savingTags ? '저장 중' : '저장'}</button></div>
           </form>
         </Modal>
       )}

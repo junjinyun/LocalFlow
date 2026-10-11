@@ -94,6 +94,10 @@ export const api = {
       }),
     remove: (projectId: string, fileId: string) =>
       request<void>(`/api/projects/${projectId}/files/${fileId}?approved=true`, { method: 'DELETE' }),
+    updateTags: (projectId: string, fileId: string, addedTags: string[], excludedTags: string[]) =>
+      request<ProjectFile>(`/api/projects/${projectId}/files/${fileId}/tags`, {
+        method: 'PUT', body: JSON.stringify({ addedTags, excludedTags }),
+      }),
     downloadUrl: (projectId: string, fileId: string) => `${API_BASE}/api/projects/${projectId}/files/${fileId}/download`,
     archiveUrl: (projectId: string) => `${API_BASE}/api/projects/${projectId}/archive`,
   },

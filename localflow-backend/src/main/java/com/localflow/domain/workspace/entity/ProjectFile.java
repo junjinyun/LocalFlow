@@ -62,6 +62,16 @@ public class ProjectFile {
     @Column(name = "tag", nullable = false, length = 80)
     private Set<String> tags = new LinkedHashSet<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "project_file_user_added_tags", joinColumns = @JoinColumn(name = "project_file_id"))
+    @Column(name = "tag", nullable = false, length = 80)
+    private Set<String> userAddedTags = new LinkedHashSet<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "project_file_user_excluded_tags", joinColumns = @JoinColumn(name = "project_file_id"))
+    @Column(name = "tag", nullable = false, length = 80)
+    private Set<String> userExcludedTags = new LinkedHashSet<>();
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -111,6 +121,14 @@ public class ProjectFile {
         if (values != null) tags.addAll(values);
     }
 
+    public void updateTagOverrides(Collection<String> added, Collection<String> excluded) {
+        userAddedTags.clear();
+        userExcludedTags.clear();
+        if (added != null) userAddedTags.addAll(added);
+        if (excluded != null) userExcludedTags.addAll(excluded);
+        this.updatedAt = Instant.now();
+    }
+
     public String getId() { return id; }
     public Project getProject() { return project; }
     public String getRelativePath() { return relativePath; }
@@ -120,7 +138,15 @@ public class ProjectFile {
     public String getLanguage() { return language; }
     public long getSizeBytes() { return sizeBytes; }
     public String getSha256() { return sha256; }
-    public Set<String> getTags() { return Set.copyOf(tags); }
+    public Set<String> getTags() {
+        Set<String> effective = new LinkedHashSet<>(tags);
+        effective.addAll(userAddedTags);
+        effective.removeAll(userExcludedTags);
+        return Set.copyOf(effective);
+    }
+    public Set<String> getAutomaticTags() { return Set.copyOf(tags); }
+    public Set<String> getUserAddedTags() { return Set.copyOf(userAddedTags); }
+    public Set<String> getUserExcludedTags() { return Set.copyOf(userExcludedTags); }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }
