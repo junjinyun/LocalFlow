@@ -211,7 +211,8 @@ public class AgentExecutionService {
                     systemPrompt, userPrompt, selectedModel, outputSchemas.filePlan());
             GenerationRequest preparedRequest = generationRequest.withSchemaInstruction("파일 변경 계획");
             run.recordInputSnapshot(objectMapper.writeValueAsString(new AgentInputSnapshot(
-                    contextSnapshot.files(), preparedRequest.systemPrompt(), preparedRequest.userPrompt())));
+                    contextSnapshot.files(), contextSnapshot.memories(),
+                    preparedRequest.systemPrompt(), preparedRequest.userPrompt())));
             run.startPlanning(provider.providerType());
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,

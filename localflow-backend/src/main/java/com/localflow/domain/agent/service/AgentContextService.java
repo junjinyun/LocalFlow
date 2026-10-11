@@ -4,6 +4,8 @@ import com.localflow.domain.chat.entity.ChatMessage;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.memory.entity.ProjectMemory;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
+import com.localflow.domain.memory.service.ProjectMemoryScopeMatcher;
+import com.localflow.domain.agent.domain.AgentInputSnapshot.MemoryReference;
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.DecisionResult;
@@ -29,17 +31,20 @@ public class AgentContextService {
     private final ChatMessageRepository chatRepository;
     private final WorkspaceStorageService storageService;
     private final AiProviderProperties properties;
+    private final ProjectMemoryScopeMatcher memoryScopeMatcher;
 
     public AgentContextService(ProjectFileRepository fileRepository,
                                ProjectMemoryRepository memoryRepository,
                                ChatMessageRepository chatRepository,
                                WorkspaceStorageService storageService,
-                               AiProviderProperties properties) {
+                               AiProviderProperties properties,
+                               ProjectMemoryScopeMatcher memoryScopeMatcher) {
         this.fileRepository = fileRepository;
         this.memoryRepository = memoryRepository;
         this.chatRepository = chatRepository;
         this.storageService = storageService;
         this.properties = properties;
+        this.memoryScopeMatcher = memoryScopeMatcher;
     }
 
     public List<ProjectFile> files(String projectId) {
@@ -50,7 +55,7 @@ public class AgentContextService {
         List<ProjectFile> files = files(project.getId());
         StringBuilder context = new StringBuilder();
         append(context, "프로젝트", project.getName() + "\n설명: " + nullable(project.getDescription()));
-        append(context, "활성 프로젝트 기억", memories(project.getId()));
+        append(context, "전체 적용 프로젝트 기억", globalMemories(project.getId()));
         append(context, "최근 대화", recentMessages(project.getId()));
         append(context, "사용 가능한 태그", files.stream().flatMap(file -> file.getTags().stream())
                 .distinct().sorted().toList().toString());
@@ -64,15 +69,25 @@ public class AgentContextService {
         List<ProjectFile> files = files(project.getId());
         StringBuilder context = new StringBuilder();
         List<String> contextFiles = new ArrayList<>();
+        List<ProjectFile> selectedFiles = includeContents ? select(files, prompt, decision) : List.of();
+        List<String> selectedPaths = new ArrayList<>(selectedFiles.stream()
+                .map(ProjectFile::getRelativePath).toList());
+        if (decision.targetPath() != null && !selectedPaths.contains(decision.targetPath())) {
+            selectedPaths.add(decision.targetPath());
+        }
+        Set<String> selectedTags = new LinkedHashSet<>(decision.selectedTags());
+        selectedFiles.forEach(file -> selectedTags.addAll(file.getTags()));
+        List<ProjectMemory> matchedMemories = matchedMemories(project.getId(), decision.actionType(),
+                selectedTags, selectedPaths);
         append(context, "프로젝트", project.getName() + "\n설명: " + nullable(project.getDescription()));
-        append(context, "활성 프로젝트 기억", memories(project.getId()));
+        append(context, "관련 프로젝트 기억", memoryText(matchedMemories));
         append(context, "최근 대화", recentMessages(project.getId()));
         append(context, "분해된 작업 단위", taskDescription(decision.taskScopes()));
         append(context, "선택된 파일 태그", decision.selectedTags().toString());
         append(context, "전체 파일 인덱스", files.stream()
                 .map(file -> file.getRelativePath() + " tags=" + file.getTags()).toList().toString());
         if (includeContents) {
-            for (ProjectFile file : select(files, prompt, decision)) {
+            for (ProjectFile file : selectedFiles) {
                 if (context.length() >= properties.contextMaxChars()) break;
                 String content = storageService.readText(project.getId(), file.getRelativePath());
                 int remaining = properties.contextMaxChars() - context.length();
@@ -83,7 +98,8 @@ public class AgentContextService {
             }
         }
         String value = context.substring(0, Math.min(context.length(), properties.contextMaxChars()));
-        return new ContextSnapshot(value, contextFiles);
+        return new ContextSnapshot(value, contextFiles, matchedMemories.stream()
+                .map(memory -> new MemoryReference(memory.getId(), memory.getTitle())).toList());
     }
 
     public String build(Project project, String prompt, DecisionResult decision, boolean includeContents) {
@@ -147,8 +163,19 @@ public class AgentContextService {
         return result;
     }
 
-    private String memories(String projectId) {
+    private String globalMemories(String projectId) {
         List<ProjectMemory> values = memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(projectId);
+        return memoryText(values.stream().filter(ProjectMemory::isGlobalScope).toList());
+    }
+
+    private List<ProjectMemory> matchedMemories(String projectId, String taskType,
+                                                Set<String> tags, List<String> files) {
+        return memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(projectId).stream()
+                .filter(memory -> memoryScopeMatcher.matches(memory, taskType, tags, files))
+                .limit(20).toList();
+    }
+
+    private String memoryText(List<ProjectMemory> values) {
         if (values.isEmpty()) return "(없음)";
         List<String> lines = new ArrayList<>();
         values.stream().limit(20).forEach(memory ->
@@ -172,9 +199,10 @@ public class AgentContextService {
     private String nullable(String value) { return value == null || value.isBlank() ? "(없음)" : value; }
     private String abbreviate(String value, int max) { return value.length() <= max ? value : value.substring(0, max) + "…"; }
 
-    public record ContextSnapshot(String content, List<String> files) {
+    public record ContextSnapshot(String content, List<String> files, List<MemoryReference> memories) {
         public ContextSnapshot {
             files = files == null ? List.of() : List.copyOf(files);
+            memories = memories == null ? List.of() : List.copyOf(memories);
         }
     }
 }

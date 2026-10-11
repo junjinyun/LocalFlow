@@ -63,7 +63,8 @@ export type ChatMessage = {
 export type MemoryType = 'PROJECT_RULE' | 'IMPLEMENTATION_DECISION' | 'OPEN_TASK' | 'ERROR_CONTEXT' | 'NOTE'
 export type ProjectMemory = {
   id: string; projectId: string; type: MemoryType; title: string; content: string
-  active: boolean; createdAt: string; updatedAt: string
+  active: boolean; globalScope: boolean; scopeTags: string[]; scopeFilePatterns: string[]
+  scopeTaskTypes: string[]; createdAt: string; updatedAt: string
 }
 
 export type ProviderType = 'JEV' | 'OPENAI' | 'VERTEX_AI' | 'OLLAMA' | 'GEMINI_CLI'
@@ -93,6 +94,7 @@ export type AgentFileChangeSnapshot = {
 }
 export type AgentInputSnapshot = {
   contextFiles: string[]
+  memories: Array<{ id: string; title: string }>
   systemPrompt: string
   userPrompt: string
 }

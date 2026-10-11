@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.localflow.domain.agent.service.AgentContextService;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
+import com.localflow.domain.memory.service.ProjectMemoryScopeMatcher;
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.DecisionResult;
@@ -25,7 +26,8 @@ class AgentContextServiceTest {
     private final AiProviderProperties properties = new AiProviderProperties(
             32_000, 20, null, null, null, null);
     private final AgentContextService service = new AgentContextService(
-            fileRepository, memoryRepository, chatRepository, storageService, properties);
+            fileRepository, memoryRepository, chatRepository, storageService, properties,
+            new ProjectMemoryScopeMatcher());
 
     @Test
     void reportsOnlyFilesWhoseContentsAreIncludedInTheGenerationContext() {

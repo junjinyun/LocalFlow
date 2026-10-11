@@ -112,13 +112,14 @@ export const api = {
     list: (projectId: string, activeOnly = false) => request<ProjectMemory[]>(
       `/api/projects/${projectId}/memories?activeOnly=${activeOnly}`,
     ),
-    create: (projectId: string, type: MemoryType, title: string, content: string) =>
+    create: (projectId: string, type: MemoryType, title: string, content: string,
+      globalScope: boolean, scopeTags: string[], scopeFilePatterns: string[], scopeTaskTypes: string[]) =>
       request<ProjectMemory>(`/api/projects/${projectId}/memories`, {
-        method: 'POST', body: JSON.stringify({ type, title, content }),
+        method: 'POST', body: JSON.stringify({ type, title, content, globalScope, scopeTags, scopeFilePatterns, scopeTaskTypes }),
       }),
     update: (projectId: string, memory: ProjectMemory) => request<ProjectMemory>(
       `/api/projects/${projectId}/memories/${memory.id}`,
-      { method: 'PUT', body: JSON.stringify({ type: memory.type, title: memory.title, content: memory.content, active: memory.active }) },
+      { method: 'PUT', body: JSON.stringify({ type: memory.type, title: memory.title, content: memory.content, active: memory.active, globalScope: memory.globalScope, scopeTags: memory.scopeTags, scopeFilePatterns: memory.scopeFilePatterns, scopeTaskTypes: memory.scopeTaskTypes }) },
     ),
     remove: (projectId: string, memoryId: string) =>
       request<void>(`/api/projects/${projectId}/memories/${memoryId}`, { method: 'DELETE' }),
