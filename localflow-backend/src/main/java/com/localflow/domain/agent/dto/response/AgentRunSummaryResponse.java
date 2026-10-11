@@ -27,6 +27,8 @@ public record AgentRunSummaryResponse(
         Boolean errorRetryable,
         String errorRecommendedAction,
         int providerRetryCount,
+        String retryOfRunId,
+        String retriedByRunId,
         String model,
         Instant createdAt,
         Instant updatedAt,
@@ -43,7 +45,8 @@ public record AgentRunSummaryResponse(
                 run.getExecutionMode(), run.getPreferredGenerationProvider(),
                 run.getPreferredModel(), run.getActualGenerationProvider(), run.getStatus(), AgentRunResponse.notice(run),
                 summary, changes, run.getErrorMessage(), run.getProviderErrorCode(),
-                run.getErrorRetryable(), run.getErrorRecommendedAction(), run.getProviderRetryCount(), run.getModel(),
+                run.getErrorRetryable(), run.getErrorRecommendedAction(), run.getProviderRetryCount(),
+                run.getRetryOfRunId(), run.getRetriedByRunId(), run.getModel(),
                 run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt());
     }
 

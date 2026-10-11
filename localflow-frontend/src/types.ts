@@ -135,6 +135,7 @@ export type AgentRun = {
   resultMessage: string | null; errorMessage: string | null; model: string | null
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null
+  retryOfRunId: string | null; retriedByRunId: string | null
   inputTokens: number | null; outputTokens: number | null
   providerRetryCount: number; lastProviderRetryAt: string | null
   createdAt: string; updatedAt: string; completedAt: string | null
@@ -165,5 +166,6 @@ export type AgentRunSummary = {
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null
   providerRetryCount: number
+  retryOfRunId: string | null; retriedByRunId: string | null
   createdAt: string; updatedAt: string; completedAt: string | null
 }
