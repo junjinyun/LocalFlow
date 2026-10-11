@@ -4,6 +4,7 @@ import com.localflow.domain.workspace.dto.FileContentResponse;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
 import com.localflow.domain.workspace.dto.FileSyncManifest;
 import com.localflow.domain.workspace.dto.FileSyncResponse;
+import com.localflow.domain.workspace.dto.FileTagOverrideRequest;
 import com.localflow.domain.workspace.dto.FileWriteRequest;
 import com.localflow.domain.workspace.dto.ProjectFileResponse;
 import com.localflow.domain.workspace.entity.ProjectFile;
@@ -117,6 +118,15 @@ public class ProjectFileController {
                                     @RequestParam(defaultValue = "false") boolean approved) {
         fileService.delete(projectId, fileId, approved);
         return ApiResponse.success(null, "파일이 삭제되었습니다.");
+    }
+
+    @Operation(summary = "파일 자동 태그에 적용할 사용자 보정값 수정")
+    @PutMapping("/files/{fileId}/tags")
+    public ApiResponse<ProjectFileResponse> updateTags(@PathVariable String projectId,
+                                                       @PathVariable String fileId,
+                                                       @Valid @RequestBody FileTagOverrideRequest request) {
+        return ApiResponse.success(fileService.updateTags(projectId, fileId, request),
+                "파일 태그 보정값이 저장되었습니다.");
     }
 
     @Operation(summary = "작업 완료 디렉터리 ZIP 다운로드")

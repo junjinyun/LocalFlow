@@ -14,6 +14,7 @@ import com.localflow.domain.workspace.dto.FileContentResponse;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
 import com.localflow.domain.workspace.dto.FileSyncItemResponse;
 import com.localflow.domain.workspace.dto.FileSyncResponse;
+import com.localflow.domain.workspace.dto.FileTagOverrideRequest;
 import com.localflow.domain.workspace.dto.FileWriteRequest;
 import com.localflow.domain.workspace.dto.ProjectFileResponse;
 import com.localflow.domain.workspace.entity.ProjectFile;
@@ -36,6 +37,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -246,7 +248,8 @@ public class ProjectFileService {
             return ProjectFileBackup.missing(normalized);
         }
         return new ProjectFileBackup(normalized, true,
-                storageService.readBytes(projectId, normalized), file.getTags());
+                storageService.readBytes(projectId, normalized), file.getAutomaticTags(),
+                file.getUserAddedTags(), file.getUserExcludedTags());
     }
 
     @Transactional
@@ -270,9 +273,31 @@ public class ProjectFileService {
             ProjectFile restored = saveMetadata(project, null, backup.relativePath(),
                     fileSize(stored), hash(stored));
             sourceIndexService.reindex(restored, stored);
-            restored.replaceTags(backup.tags());
+            restored.replaceTags(backup.automaticTags());
+            restored.updateTagOverrides(backup.userAddedTags(), backup.userExcludedTags());
         }
         fileRepository.flush();
+    }
+
+    @Transactional
+    public ProjectFileResponse updateTags(String projectId, String fileId,
+                                          FileTagOverrideRequest request) {
+        ProjectFile file = requireFile(projectId, fileId);
+        Set<String> added = normalizeTags(request.addedTags());
+        Set<String> excluded = normalizeTags(request.excludedTags());
+        if (added.stream().anyMatch(excluded::contains)) {
+            throw new CustomException(ErrorCode.INVALID_REQUEST);
+        }
+        file.updateTagOverrides(added, excluded);
+        return ProjectFileResponse.from(fileRepository.save(file));
+    }
+
+    private Set<String> normalizeTags(Set<String> values) {
+        Set<String> normalized = new LinkedHashSet<>();
+        if (values == null) return normalized;
+        values.stream().map(String::strip).map(value -> value.toLowerCase(Locale.ROOT))
+                .forEach(normalized::add);
+        return normalized;
     }
 
     private ProjectSettings settings(String projectId) {
