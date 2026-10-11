@@ -9,6 +9,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +70,8 @@ public class ProviderHttpClient {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             ProviderCallException mapped = errorMapper.fromHttp(
                     providerType, response.statusCode(), response.body());
+            Duration retryAfter = retryAfter(response.headers().firstValue("Retry-After").orElse(null));
+            if (retryAfter != null) mapped = mapped.withRetryAfter(retryAfter);
             logFailure(mapped);
             throw mapped;
         }
@@ -98,5 +103,20 @@ public class ProviderHttpClient {
         log.warn("AI provider call failed: provider={}, code={}, retryable={}, diagnostic={}",
                 exception.providerType(), exception.errorCode(), exception.retryable(),
                 SensitiveDataMasker.mask(exception.diagnosticMessage()));
+    }
+
+    private Duration retryAfter(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Duration.ofSeconds(Math.max(0, Long.parseLong(value.strip())));
+        } catch (NumberFormatException ignored) {
+            try {
+                Duration duration = Duration.between(ZonedDateTime.now(),
+                        ZonedDateTime.parse(value.strip(), DateTimeFormatter.RFC_1123_DATE_TIME));
+                return duration.isNegative() ? Duration.ZERO : duration;
+            } catch (DateTimeParseException ignoredDate) {
+                return null;
+            }
+        }
     }
 }

@@ -284,6 +284,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
               <dt>AI 제공자</dt><dd>{selectedRun.actualGenerationProvider || selectedRun.preferredGenerationProvider || '지정되지 않음'}</dd>
               <dt>모델</dt><dd>{selectedRun.model || decision?.model || '확인되지 않음'}</dd>
               <dt>토큰</dt><dd>입력 {selectedRun.inputTokens ?? 0} · 출력 {selectedRun.outputTokens ?? 0}</dd>
+              <dt>제공자 재시도</dt><dd>{selectedRun.providerRetryCount ?? 0}회</dd>
               {selectedRun.providerErrorCode && <><dt>오류 코드</dt><dd><code>{selectedRun.providerErrorCode}</code></dd></>}
               {selectedRun.errorRetryable != null && <><dt>재시도</dt><dd>{selectedRun.errorRetryable ? '가능' : '설정 확인 필요'}</dd></>}
               {selectedRun.errorRecommendedAction && <><dt>권장 조치</dt><dd>{selectedRun.errorRecommendedAction}</dd></>}

@@ -30,6 +30,7 @@ import com.localflow.domain.provider.service.SensitiveDataMasker;
 import com.localflow.domain.provider.service.OllamaGenerationProvider;
 import com.localflow.domain.provider.service.OllamaLocalPolicy;
 import com.localflow.domain.provider.service.StructuredGenerationService;
+import com.localflow.domain.provider.service.ProviderRetryExecutor;
 import com.localflow.domain.provider.service.StructuredGenerationService.ParsedGeneration;
 import com.localflow.domain.workspace.domain.FileCategory;
 import com.localflow.domain.workspace.entity.ProjectFile;
@@ -41,6 +42,7 @@ import java.util.EnumMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -57,6 +59,7 @@ public class AgentExecutionService {
     private final TaskDecompositionParser decompositionParser;
     private final AgentOutputSchemas outputSchemas;
     private final StructuredGenerationService structuredGenerationService;
+    private final ProviderRetryExecutor retryExecutor;
     private final OllamaLocalPolicy ollamaLocalPolicy;
     private final ProjectSettingsRepository settingsRepository;
     private final ProjectFileRepository fileRepository;
@@ -76,6 +79,7 @@ public class AgentExecutionService {
                                  TaskDecompositionParser decompositionParser,
                                  AgentOutputSchemas outputSchemas,
                                  StructuredGenerationService structuredGenerationService,
+                                 ProviderRetryExecutor retryExecutor,
                                  OllamaLocalPolicy ollamaLocalPolicy,
                                  ProjectSettingsRepository settingsRepository,
                                  ProjectFileRepository fileRepository,
@@ -94,6 +98,7 @@ public class AgentExecutionService {
         this.decompositionParser = decompositionParser;
         this.outputSchemas = outputSchemas;
         this.structuredGenerationService = structuredGenerationService;
+        this.retryExecutor = retryExecutor;
         this.ollamaLocalPolicy = ollamaLocalPolicy;
         this.settingsRepository = settingsRepository;
         this.fileRepository = fileRepository;
@@ -176,7 +181,9 @@ public class AgentExecutionService {
             progressService.append(projectId, runId, AgentProgressStage.DECIDING,
                     "Jev가 관련 태그, 대상 범위와 작업 위험도를 판단하는 중입니다.");
             DecisionResult decision = decisionService.decide(run.getPrompt(), files,
-                    settings.getPrivacyMode() == PrivacyMode.EXTERNAL_ALLOWED, decomposition.value());
+                    settings.getPrivacyMode() == PrivacyMode.EXTERNAL_ALLOWED, decomposition.value(),
+                    () -> cancellationService.checkpoint(projectId, runId),
+                    notice -> recordProviderRetry(projectId, run, AgentProgressStage.DECIDING, notice));
             cancellationService.checkpoint(projectId, runId);
             String decisionJson = objectMapper.writeValueAsString(decision);
 
@@ -210,11 +217,10 @@ public class AgentExecutionService {
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
                     "선택한 AI가 코드와 파일 변경 계획을 생성하는 중입니다.");
             appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
-            ParsedGeneration<AgentPlan> planGeneration = structuredGenerationService.generate(
-                    provider,
-                    generationRequest,
-                    planParser::parse,
-                    "파일 변경 계획");
+            ParsedGeneration<AgentPlan> planGeneration = withProviderRetry(
+                    projectId, run, AgentProgressStage.PLANNING,
+                    () -> structuredGenerationService.generate(
+                            provider, generationRequest, planParser::parse, "파일 변경 계획"));
             cancellationService.checkpoint(projectId, runId);
             GenerationResult generation = planGeneration.generation();
             AgentPlan plan = planGeneration.value();
@@ -460,17 +466,19 @@ public class AgentExecutionService {
         try {
             appendOllamaWaitProgress(run.getProject().getId(), run.getId(), provider,
                     AgentProgressStage.DECOMPOSING);
-            ParsedGeneration<TaskDecomposition> parsed = structuredGenerationService.generate(
-                    provider,
-                    new GenerationRequest(
-                            decompositionSystemPrompt(),
-                            decompositionUserPrompt(
-                                    run.getPrompt(),
-                                    contextService.buildDecompositionContext(run.getProject())),
-                            selectedModel,
-                            outputSchemas.taskDecomposition()),
-                    decompositionParser::parse,
-                    "작업 분해");
+            ParsedGeneration<TaskDecomposition> parsed = withProviderRetry(
+                    run.getProject().getId(), run, AgentProgressStage.DECOMPOSING,
+                    () -> structuredGenerationService.generate(
+                            provider,
+                            new GenerationRequest(
+                                    decompositionSystemPrompt(),
+                                    decompositionUserPrompt(
+                                            run.getPrompt(),
+                                            contextService.buildDecompositionContext(run.getProject())),
+                                    selectedModel,
+                                    outputSchemas.taskDecomposition()),
+                            decompositionParser::parse,
+                            "작업 분해"));
             generation = parsed.generation();
             return new DecompositionOutcome(parsed.value(), generation, parsed.attempts(), null);
         } catch (RuntimeException exception) {
@@ -539,6 +547,23 @@ public class AgentExecutionService {
             message = "로컬 Ollama 실행 슬롯을 확보하고 모델 응답을 기다리는 중입니다.";
         }
         progressService.append(projectId, runId, stage, message);
+    }
+
+    private <T> T withProviderRetry(String projectId, AgentRun run, AgentProgressStage stage,
+                                    Supplier<T> operation) {
+        return retryExecutor.execute(operation,
+                () -> cancellationService.checkpoint(projectId, run.getId()),
+                notice -> recordProviderRetry(projectId, run, stage, notice));
+    }
+
+    private void recordProviderRetry(String projectId, AgentRun run, AgentProgressStage stage,
+                                     ProviderRetryExecutor.RetryNotice notice) {
+        run.recordProviderRetry();
+        runRepository.saveAndFlush(run);
+        long seconds = Math.max(1, notice.delay().toSeconds());
+        progressService.append(projectId, run.getId(), stage,
+                notice.exception().getMessage() + " " + seconds + "초 후 다시 시도합니다. ("
+                        + (notice.failedAttempt() + 1) + "/" + notice.maxAttempts() + ")");
     }
 
     private record DecompositionOutcome(

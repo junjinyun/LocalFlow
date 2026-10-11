@@ -31,6 +31,8 @@ public record AgentRunResponse(
         String model,
         Integer inputTokens,
         Integer outputTokens,
+        int providerRetryCount,
+        Instant lastProviderRetryAt,
         Instant createdAt,
         Instant updatedAt,
         Instant completedAt,
@@ -45,6 +47,7 @@ public record AgentRunResponse(
                 run.getInputSnapshotJson(), run.getApplicationResultJson(), run.getResultMessage(),
                 run.getErrorMessage(), run.getProviderErrorCode(), run.getErrorRetryable(),
                 run.getErrorRecommendedAction(), run.getModel(), run.getInputTokens(), run.getOutputTokens(),
+                run.getProviderRetryCount(), run.getLastProviderRetryAt(),
                 run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt(),
                 run.getCancelRequestedAt(), run.getCancelledAt());
     }
