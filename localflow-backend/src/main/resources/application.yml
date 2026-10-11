@@ -68,6 +68,10 @@ localflow:
   ai:
     context-max-chars: ${AI_CONTEXT_MAX_CHARS:32000}
     max-operations: ${AI_MAX_OPERATIONS:20}
+    retry:
+      max-attempts: ${AI_PROVIDER_RETRY_MAX_ATTEMPTS:3}
+      initial-delay: ${AI_PROVIDER_RETRY_INITIAL_DELAY:1s}
+      max-delay: ${AI_PROVIDER_RETRY_MAX_DELAY:8s}
     openai:
       api-key: ${OPENAI_API_KEY:}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

@@ -92,6 +92,11 @@ public class AgentRun {
     private Integer inputTokens;
     private Integer outputTokens;
 
+    @Column(nullable = false)
+    private int providerRetryCount;
+
+    private Instant lastProviderRetryAt;
+
     private Instant completedAt;
 
     private Instant cancelRequestedAt;
@@ -211,6 +216,12 @@ public class AgentRun {
         touch();
     }
 
+    public void recordProviderRetry() {
+        this.providerRetryCount++;
+        this.lastProviderRetryAt = Instant.now();
+        touch();
+    }
+
     public void requireRecovery(String message, String applicationResultJson) {
         this.applicationResultJson = applicationResultJson;
         this.errorMessage = message;
@@ -278,6 +289,8 @@ public class AgentRun {
     public String getErrorRecommendedAction() { return errorRecommendedAction; }
     public Integer getInputTokens() { return inputTokens; }
     public Integer getOutputTokens() { return outputTokens; }
+    public int getProviderRetryCount() { return providerRetryCount; }
+    public Instant getLastProviderRetryAt() { return lastProviderRetryAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getCompletedAt() { return completedAt; }

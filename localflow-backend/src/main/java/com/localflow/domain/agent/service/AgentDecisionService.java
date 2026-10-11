@@ -12,20 +12,30 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Consumer;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AgentDecisionService {
     private final List<DecisionProvider> providers;
     private final PromptTaskDecomposer decomposer;
+    private final com.localflow.domain.provider.service.ProviderRetryExecutor retryExecutor;
 
-    public AgentDecisionService(List<DecisionProvider> providers, PromptTaskDecomposer decomposer) {
+    public AgentDecisionService(List<DecisionProvider> providers, PromptTaskDecomposer decomposer,
+                                com.localflow.domain.provider.service.ProviderRetryExecutor retryExecutor) {
         this.providers = providers;
         this.decomposer = decomposer;
+        this.retryExecutor = retryExecutor;
     }
 
     public DecisionResult decide(String prompt, List<ProjectFile> projectFiles, boolean externalAllowed,
                                  TaskDecomposition decomposition) {
+        return decide(prompt, projectFiles, externalAllowed, decomposition, () -> { }, notice -> { });
+    }
+
+    public DecisionResult decide(String prompt, List<ProjectFile> projectFiles, boolean externalAllowed,
+                                 TaskDecomposition decomposition, Runnable checkpoint,
+                                 Consumer<com.localflow.domain.provider.service.ProviderRetryExecutor.RetryNotice> retryListener) {
         List<String> candidateFiles = projectFiles.stream().map(ProjectFile::getRelativePath).toList();
         List<String> candidateTags = projectFiles.stream().flatMap(file -> file.getTags().stream())
                 .distinct().sorted().toList();
@@ -40,9 +50,10 @@ public class AgentDecisionService {
                     .findFirst().orElse(null);
             if (jev != null) {
                 try {
-                    DecisionResult result = jev.decide(new DecisionRequest(
-                            state(prompt, projectFiles, proposedScopes), candidateFiles, candidateTags,
-                            proposedScopes.stream().map(TaskScope::instruction).toList()));
+                    DecisionResult result = retryExecutor.execute(() -> jev.decide(new DecisionRequest(
+                                    state(prompt, projectFiles, proposedScopes), candidateFiles, candidateTags,
+                                    proposedScopes.stream().map(TaskScope::instruction).toList())),
+                            checkpoint, retryListener);
                     return mergeScopes(result, proposedScopes);
                 } catch (RuntimeException ignored) {
                     // Jev 장애가 전체 실행을 막지 않도록 로컬 규칙으로 판단을 계속한다.

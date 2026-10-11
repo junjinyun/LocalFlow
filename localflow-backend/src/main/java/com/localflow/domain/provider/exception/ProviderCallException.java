@@ -2,6 +2,7 @@ package com.localflow.domain.provider.exception;
 
 import com.localflow.domain.provider.domain.AiProviderType;
 import com.localflow.domain.provider.domain.ProviderErrorCode;
+import java.time.Duration;
 
 public class ProviderCallException extends RuntimeException {
     private final AiProviderType providerType;
@@ -9,34 +10,44 @@ public class ProviderCallException extends RuntimeException {
     private final boolean retryable;
     private final String recommendedAction;
     private final String diagnosticMessage;
+    private final Duration retryAfter;
 
     public ProviderCallException(AiProviderType providerType, String message) {
         this(providerType, ProviderErrorCode.UNKNOWN, message, false,
-                "설정을 확인한 뒤 다시 시도해 주세요.", message, null);
+                "설정을 확인한 뒤 다시 시도해 주세요.", message, null, null);
     }
 
     public ProviderCallException(AiProviderType providerType, String message, Throwable cause) {
         this(providerType, ProviderErrorCode.UNKNOWN, message, false,
-                "설정과 서버 로그를 확인해 주세요.", message, cause);
+                "설정과 서버 로그를 확인해 주세요.", message, cause, null);
     }
 
     public ProviderCallException(AiProviderType providerType, ProviderErrorCode errorCode,
                                  String userMessage, boolean retryable,
                                  String recommendedAction, String diagnosticMessage) {
         this(providerType, errorCode, userMessage, retryable, recommendedAction,
-                diagnosticMessage, null);
+                diagnosticMessage, null, null);
     }
 
     public ProviderCallException(AiProviderType providerType, ProviderErrorCode errorCode,
                                  String userMessage, boolean retryable,
                                  String recommendedAction, String diagnosticMessage,
                                  Throwable cause) {
+        this(providerType, errorCode, userMessage, retryable, recommendedAction,
+                diagnosticMessage, cause, null);
+    }
+
+    public ProviderCallException(AiProviderType providerType, ProviderErrorCode errorCode,
+                                 String userMessage, boolean retryable,
+                                 String recommendedAction, String diagnosticMessage,
+                                 Throwable cause, Duration retryAfter) {
         super(userMessage, cause);
         this.providerType = providerType;
         this.errorCode = errorCode == null ? ProviderErrorCode.UNKNOWN : errorCode;
         this.retryable = retryable;
         this.recommendedAction = recommendedAction;
         this.diagnosticMessage = diagnosticMessage;
+        this.retryAfter = retryAfter;
     }
 
     public AiProviderType providerType() { return providerType; }
@@ -44,9 +55,15 @@ public class ProviderCallException extends RuntimeException {
     public boolean retryable() { return retryable; }
     public String recommendedAction() { return recommendedAction; }
     public String diagnosticMessage() { return diagnosticMessage; }
+    public Duration retryAfter() { return retryAfter; }
     public String userMessage() {
         return recommendedAction == null || recommendedAction.isBlank()
                 ? getMessage() : getMessage() + " " + recommendedAction;
+    }
+
+    public ProviderCallException withRetryAfter(Duration value) {
+        return new ProviderCallException(providerType, errorCode, getMessage(), retryable,
+                recommendedAction, diagnosticMessage, getCause(), value);
     }
 
     public static ProviderCallException notConfigured(AiProviderType providerType, String message) {
