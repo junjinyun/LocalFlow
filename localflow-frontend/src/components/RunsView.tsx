@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { api } from '../api'
-import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, Project, TaskDecomposition } from '../types'
+import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, AgentTaskExecution, Project, TaskDecomposition } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
@@ -161,6 +161,11 @@ export default function RunsView({ project, notify }: { project: Project; notify
     try { return JSON.parse(run.applicationResultJson) as AgentApplyResult } catch { return null }
   }
 
+  const taskExecutionsOf = (run: AgentRun): AgentTaskExecution[] => {
+    if (!run.taskExecutionsJson) return []
+    try { return JSON.parse(run.taskExecutionsJson) as AgentTaskExecution[] } catch { return [] }
+  }
+
   const summaryFromRun = (run: AgentRun): AgentRunSummary => {
     const plan = planOf(run)
     return {
@@ -217,7 +222,9 @@ export default function RunsView({ project, notify }: { project: Project; notify
     const recordedChanges = changesOf(selectedRun)
     const inputSnapshot = inputSnapshotOf(selectedRun)
     const applyResult = applyResultOf(selectedRun)
+    const taskExecutions = taskExecutionsOf(selectedRun)
     const changes = recordedChanges ?? (plan?.operations.map(operation => ({
+      operationId: operation.id,
       action: operation.action,
       path: operation.path,
       destinationPath: operation.destinationPath,
@@ -262,6 +269,16 @@ export default function RunsView({ project, notify }: { project: Project; notify
                 {task.acceptanceCriteria.length > 0 && <ul>{task.acceptanceCriteria.map(criteria => <li key={criteria}>{criteria}</li>)}</ul>}
               </li>)}</ol>
             </>}
+            {taskExecutions.length > 0 && <ol className="task-execution-list">
+              {taskExecutions.map(task => <li key={task.taskId}>
+                <span className={`task-status ${task.status.toLowerCase()}`}>{task.status}</span>
+                <div><strong>{task.order}. {task.instruction}</strong>
+                  {task.dependsOn.length > 0 && <small>선행 작업: {task.dependsOn.join(', ')}</small>}
+                  {task.resultMessage && <p>{task.resultMessage}</p>}
+                  {task.errorMessage && <p className="run-error">{task.errorMessage}</p>}
+                </div>
+              </li>)}
+            </ol>}
           </section>
 
           <section className="run-detail-section">

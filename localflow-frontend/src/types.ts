@@ -120,6 +120,17 @@ export type TaskDecomposition = {
     acceptanceCriteria: string[]
   }>
 }
+export type AgentTaskExecution = {
+  taskId: string
+  instruction: string
+  dependsOn: string[]
+  order: number
+  status: 'PENDING' | 'RUNNING' | 'WAITING_APPROVAL' | 'COMPLETED' | 'FAILED' | 'SKIPPED'
+  planJson: string | null
+  changesJson: string | null
+  resultMessage: string | null
+  errorMessage: string | null
+}
 export type AgentDecision = {
   actionType: string
   targetPath: string | null
@@ -139,6 +150,7 @@ export type AgentRun = {
   decompositionJson: string | null
   inputSnapshotJson: string | null
   applicationResultJson: string | null
+  taskExecutionsJson: string | null
   resultMessage: string | null; errorMessage: string | null; model: string | null
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null

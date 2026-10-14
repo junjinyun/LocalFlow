@@ -6,6 +6,9 @@ import com.localflow.domain.agent.domain.AgentInputSnapshot;
 import com.localflow.domain.agent.domain.AgentProgressStage;
 import com.localflow.domain.agent.domain.AgentPlan;
 import com.localflow.domain.agent.domain.AgentRunStatus;
+import com.localflow.domain.agent.domain.AgentTaskExecution;
+import com.localflow.domain.agent.domain.AgentTaskStatus;
+import com.localflow.domain.agent.domain.DecomposedTask;
 import com.localflow.domain.agent.domain.TaskDecomposition;
 import com.localflow.domain.agent.domain.ExecutionMode;
 import com.localflow.domain.agent.domain.FileOperationAction;
@@ -42,6 +45,7 @@ import java.util.EnumMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.function.Supplier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +61,7 @@ public class AgentExecutionService {
     private final AgentContextService contextService;
     private final AgentPlanParser planParser;
     private final TaskDecompositionParser decompositionParser;
+    private final TaskDependencyPlanner taskDependencyPlanner;
     private final AgentOutputSchemas outputSchemas;
     private final StructuredGenerationService structuredGenerationService;
     private final ProviderRetryExecutor retryExecutor;
@@ -77,6 +82,7 @@ public class AgentExecutionService {
                                  AgentContextService contextService,
                                  AgentPlanParser planParser,
                                  TaskDecompositionParser decompositionParser,
+                                 TaskDependencyPlanner taskDependencyPlanner,
                                  AgentOutputSchemas outputSchemas,
                                  StructuredGenerationService structuredGenerationService,
                                  ProviderRetryExecutor retryExecutor,
@@ -96,6 +102,7 @@ public class AgentExecutionService {
         this.contextService = contextService;
         this.planParser = planParser;
         this.decompositionParser = decompositionParser;
+        this.taskDependencyPlanner = taskDependencyPlanner;
         this.outputSchemas = outputSchemas;
         this.structuredGenerationService = structuredGenerationService;
         this.retryExecutor = retryExecutor;
@@ -120,7 +127,7 @@ public class AgentExecutionService {
             cancellationService.checkpoint(projectId, runId);
             progressService.append(projectId, runId, AgentProgressStage.PREPARING,
                     "요청을 확인하고 실행 환경을 준비하는 중입니다.");
-            if (approvalResume && run.getPlanJson() != null) {
+            if (approvalResume && run.getPlanJson() != null && run.getTaskExecutionsJson() == null) {
                 AgentPlan originalPlan = planParser.parse(run.getPlanJson());
                 AgentPlan storedPlan = AgentPlanSelection.select(originalPlan, selectedOperationIds);
                 cancellationService.checkpoint(projectId, runId);
@@ -197,6 +204,14 @@ public class AgentExecutionService {
                 progressService.append(projectId, runId, AgentProgressStage.WAITING_APPROVAL,
                         "관련 파일 내용을 AI에 전달하기 전에 사용자 승인을 기다리고 있습니다.");
                 runRepository.saveAndFlush(run);
+                return;
+            }
+
+            List<DecomposedTask> orderedTasks = taskDependencyPlanner.order(decomposition.value().tasks());
+            if (orderedTasks.size() > 1 || run.getTaskExecutionsJson() != null) {
+                executeTaskSequence(projectId, runId, run, settings, provider, selectedModel,
+                        decomposition.value(), orderedTasks, decompositionInputTokens,
+                        decompositionOutputTokens, approvalResume, selectedOperationIds);
                 return;
             }
 
@@ -291,6 +306,216 @@ public class AgentExecutionService {
             progressService.append(projectId, runId, AgentProgressStage.FAILED,
                     "작업을 완료하지 못했습니다: " + safeMessage(exception));
         }
+    }
+
+    private void executeTaskSequence(String projectId, String runId, AgentRun run,
+                                     ProjectSettings settings, GenerationProvider provider,
+                                     String selectedModel, TaskDecomposition decomposition,
+                                     List<DecomposedTask> orderedTasks,
+                                     Integer initialInputTokens, Integer initialOutputTokens,
+                                     boolean approvalResume, List<String> selectedOperationIds) throws Exception {
+        List<AgentTaskExecution> executions = taskExecutions(run, orderedTasks);
+        int inputTokens = initialInputTokens == null ? 0 : initialInputTokens;
+        int outputTokens = initialOutputTokens == null ? 0 : initialOutputTokens;
+
+        if (approvalResume) {
+            int waitingIndex = findTask(executions, AgentTaskStatus.WAITING_APPROVAL);
+            if (waitingIndex < 0 || run.getPlanJson() == null) {
+                throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
+            }
+            AgentPlan approvedPlan = AgentPlanSelection.select(
+                    planParser.parse(run.getPlanJson()), selectedOperationIds);
+            progressService.append(projectId, runId, AgentProgressStage.APPLYING,
+                    "승인된 작업 단위의 파일 변경을 적용하는 중입니다.");
+            run.startRunning(snapshotJson(projectId, approvedPlan));
+            runRepository.saveAndFlush(run);
+            var applyResult = fileChangeTransactionService.apply(projectId, approvedPlan,
+                    () -> cancellationService.checkpoint(projectId, runId));
+            run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
+            AgentTaskExecution waiting = executions.get(waitingIndex);
+            executions.set(waitingIndex, waiting.withStatus(AgentTaskStatus.COMPLETED,
+                    waiting.planJson(), snapshotJson(projectId, approvedPlan),
+                    approvedPlan.response(), null));
+            saveTaskExecutions(run, executions);
+        }
+
+        Map<String, AgentTaskStatus> statuses = new HashMap<>();
+        executions.forEach(execution -> statuses.put(execution.taskId(), execution.status()));
+        boolean includeContents = settings.getReadPolicy() != PermissionPolicy.DENY;
+        boolean anyFailed = false;
+
+        for (int index = 0; index < executions.size(); index++) {
+            AgentTaskExecution execution = executions.get(index);
+            if (execution.status() != AgentTaskStatus.PENDING) continue;
+            if (execution.dependsOn().stream().anyMatch(dependency -> {
+                AgentTaskStatus status = statuses.get(dependency);
+                return status == AgentTaskStatus.FAILED || status == AgentTaskStatus.SKIPPED;
+            })) {
+                AgentTaskExecution skipped = execution.withStatus(AgentTaskStatus.SKIPPED,
+                        null, null, null, "선행 작업이 완료되지 않아 실행하지 않았습니다.");
+                executions.set(index, skipped);
+                statuses.put(skipped.taskId(), skipped.status());
+                saveTaskExecutions(run, executions);
+                continue;
+            }
+
+            DecomposedTask task = orderedTasks.stream()
+                    .filter(candidate -> candidate.id().equals(execution.taskId()))
+                    .findFirst().orElseThrow(() -> new CustomException(ErrorCode.INVALID_TASK_DEPENDENCY));
+            AgentTaskExecution running = execution.withStatus(AgentTaskStatus.RUNNING,
+                    null, null, null, null);
+            executions.set(index, running);
+            statuses.put(running.taskId(), running.status());
+            saveTaskExecutions(run, executions);
+            progressService.append(projectId, runId, AgentProgressStage.DECIDING,
+                    "작업 " + (index + 1) + "/" + executions.size() + "의 대상 파일과 위험도를 판단하는 중입니다.");
+
+            String taskPlanJson = null;
+            String taskChangesJson = null;
+            try {
+                cancellationService.checkpoint(projectId, runId);
+                List<ProjectFile> currentFiles = contextService.files(projectId);
+                TaskDecomposition singleTask = new TaskDecomposition(
+                        task.instruction(), decomposition.source(), List.of(task));
+                DecisionResult decision = decisionService.decide(task.instruction(), currentFiles,
+                        settings.getPrivacyMode() == PrivacyMode.EXTERNAL_ALLOWED, singleTask,
+                        () -> cancellationService.checkpoint(projectId, runId),
+                        notice -> recordProviderRetry(projectId, run, AgentProgressStage.DECIDING, notice));
+                String decisionJson = objectMapper.writeValueAsString(decision);
+                AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
+                        run.getProject(), task.instruction(), decision, includeContents);
+                String systemPrompt = systemPrompt();
+                String taskPrompt = userPrompt(task.instruction(), singleTask, decision,
+                        contextSnapshot.content());
+                GenerationRequest request = new GenerationRequest(
+                        systemPrompt, taskPrompt, selectedModel, outputSchemas.filePlan());
+                GenerationRequest prepared = request.withSchemaInstruction("파일 변경 계획");
+                run.recordInputSnapshot(objectMapper.writeValueAsString(new AgentInputSnapshot(
+                        contextSnapshot.files(), contextSnapshot.memories(),
+                        prepared.systemPrompt(), prepared.userPrompt())));
+                run.startPlanning(provider.providerType());
+                runRepository.saveAndFlush(run);
+                progressService.append(projectId, runId, AgentProgressStage.PLANNING,
+                        "작업 " + (index + 1) + "/" + executions.size() + "의 파일 변경 계획을 생성하는 중입니다.");
+                appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
+                ParsedGeneration<AgentPlan> generated = withProviderRetry(
+                        projectId, run, AgentProgressStage.PLANNING,
+                        () -> structuredGenerationService.generate(
+                                provider, request, planParser::parse, "파일 변경 계획"));
+                AgentPlan plan = generated.value();
+                validatePolicies(settings, plan);
+                String planJson = planParser.toJson(plan);
+                String changesJson = snapshotJson(projectId, plan);
+                taskPlanJson = planJson;
+                taskChangesJson = changesJson;
+                inputTokens += generated.generation().inputTokens() == null
+                        ? 0 : generated.generation().inputTokens();
+                outputTokens += generated.generation().outputTokens() == null
+                        ? 0 : generated.generation().outputTokens();
+
+                if (needsApproval(run.getExecutionMode(), settings, decision, plan)) {
+                    AgentTaskExecution waiting = running.withStatus(AgentTaskStatus.WAITING_APPROVAL,
+                            planJson, changesJson, plan.response(), null);
+                    executions.set(index, waiting);
+                    statuses.put(waiting.taskId(), waiting.status());
+                    saveTaskExecutions(run, executions);
+                    run.waitForApproval(decisionJson, planJson, changesJson,
+                            "작업 " + (index + 1) + "의 파일 변경 승인이 필요합니다.",
+                            generated.generation().model(), inputTokens, outputTokens);
+                    runRepository.saveAndFlush(run);
+                    progressService.append(projectId, runId, AgentProgressStage.WAITING_APPROVAL,
+                            "작업 " + (index + 1) + "/" + executions.size()
+                                    + "의 변경 계획이 준비되어 승인을 기다리고 있습니다.");
+                    return;
+                }
+
+                run.startRunning(changesJson);
+                runRepository.saveAndFlush(run);
+                progressService.append(projectId, runId, AgentProgressStage.APPLYING,
+                        "작업 " + (index + 1) + "/" + executions.size() + "의 파일 변경을 적용하는 중입니다.");
+                var applyResult = fileChangeTransactionService.apply(projectId, plan,
+                        () -> cancellationService.checkpoint(projectId, runId));
+                run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
+                AgentTaskExecution completed = running.withStatus(AgentTaskStatus.COMPLETED,
+                        planJson, changesJson, plan.response(), null);
+                executions.set(index, completed);
+                statuses.put(completed.taskId(), completed.status());
+                saveTaskExecutions(run, executions);
+            } catch (AgentRunCancelledException exception) {
+                throw exception;
+            } catch (AgentFileApplyException exception) {
+                if (!exception.result().rollbackSuccessful()) throw exception;
+                anyFailed = true;
+                AgentTaskExecution failed = running.withStatus(AgentTaskStatus.FAILED,
+                        taskPlanJson, taskChangesJson, null, safeMessage(exception));
+                executions.set(index, failed);
+                statuses.put(failed.taskId(), failed.status());
+                saveTaskExecutions(run, executions);
+            } catch (Exception exception) {
+                anyFailed = true;
+                AgentTaskExecution failed = running.withStatus(AgentTaskStatus.FAILED,
+                        taskPlanJson, taskChangesJson, null, safeMessage(exception));
+                executions.set(index, failed);
+                statuses.put(failed.taskId(), failed.status());
+                saveTaskExecutions(run, executions);
+            }
+        }
+
+        List<FileOperationPlan> combinedOperations = new ArrayList<>();
+        List<String> results = new ArrayList<>();
+        for (AgentTaskExecution execution : executions) {
+            if (execution.planJson() != null && execution.status() == AgentTaskStatus.COMPLETED) {
+                AgentPlan taskPlan = planParser.parse(execution.planJson());
+                combinedOperations.addAll(taskPlan.operations());
+            }
+            if (execution.resultMessage() != null) results.add(execution.resultMessage());
+        }
+        AgentPlan combined = new AgentPlan(decomposition.summary(),
+                results.isEmpty() ? "분해된 작업 실행을 완료했습니다." : String.join("\n\n", results),
+                combinedOperations);
+        if (anyFailed || executions.stream().anyMatch(value -> value.status() == AgentTaskStatus.FAILED)) {
+            run.fail("일부 작업 단위가 실패했습니다. 실행 상세에서 작업별 결과를 확인해 주세요.");
+            runRepository.saveAndFlush(run);
+            progressService.append(projectId, runId, AgentProgressStage.FAILED,
+                    "독립 작업은 계속 처리했지만 일부 작업 단위를 완료하지 못했습니다.");
+            return;
+        }
+        String combinedJson = planParser.toJson(combined);
+        run.complete(run.getDecisionJson(), combinedJson, combined.response(), selectedModel,
+                inputTokens, outputTokens);
+        runRepository.saveAndFlush(run);
+        addSystemMessage(run, combined.response());
+        progressService.append(projectId, runId, AgentProgressStage.COMPLETED,
+                "의존 순서에 따른 모든 작업 단위 실행을 완료했습니다.");
+    }
+
+    private List<AgentTaskExecution> taskExecutions(AgentRun run,
+                                                    List<DecomposedTask> orderedTasks) throws Exception {
+        if (run.getTaskExecutionsJson() != null && !run.getTaskExecutionsJson().isBlank()) {
+            var type = objectMapper.getTypeFactory()
+                    .constructCollectionType(List.class, AgentTaskExecution.class);
+            return new ArrayList<>(objectMapper.readValue(run.getTaskExecutionsJson(), type));
+        }
+        List<AgentTaskExecution> created = new ArrayList<>();
+        for (int index = 0; index < orderedTasks.size(); index++) {
+            DecomposedTask task = orderedTasks.get(index);
+            created.add(new AgentTaskExecution(task.id(), task.instruction(), task.dependsOn(),
+                    index + 1, AgentTaskStatus.PENDING, null, null, null, null));
+        }
+        saveTaskExecutions(run, created);
+        return created;
+    }
+
+    private void saveTaskExecutions(AgentRun run, List<AgentTaskExecution> executions) throws Exception {
+        run.recordTaskExecutions(objectMapper.writeValueAsString(executions));
+        runRepository.saveAndFlush(run);
+    }
+
+    private int findTask(List<AgentTaskExecution> executions, AgentTaskStatus status) {
+        for (int index = 0; index < executions.size(); index++) {
+            if (executions.get(index).status() == status) return index;
+        }
+        return -1;
     }
 
     @Transactional
