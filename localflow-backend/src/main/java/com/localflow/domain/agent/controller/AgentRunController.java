@@ -2,6 +2,7 @@ package com.localflow.domain.agent.controller;
 
 import com.localflow.domain.agent.dto.request.AgentRunCreateRequest;
 import com.localflow.domain.agent.dto.request.AgentRunExecuteRequest;
+import com.localflow.domain.agent.dto.request.AgentRunRevisionRequest;
 import com.localflow.domain.agent.dto.response.AgentRunResponse;
 import com.localflow.domain.agent.dto.response.AgentRunProgressResponse;
 import com.localflow.domain.agent.dto.response.AgentRunSummaryResponse;
@@ -11,6 +12,7 @@ import com.localflow.domain.agent.service.AgentRunDispatchService;
 import com.localflow.domain.agent.service.AgentRunProgressService;
 import com.localflow.domain.agent.service.AgentRunService;
 import com.localflow.domain.agent.service.AgentRunRetryService;
+import com.localflow.domain.agent.service.AgentRunRevisionService;
 import com.localflow.global.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,19 +37,22 @@ public class AgentRunController {
     private final AgentRunDispatchService dispatchService;
     private final AgentRunProgressService progressService;
     private final AgentRunRetryService retryService;
+    private final AgentRunRevisionService revisionService;
 
     public AgentRunController(AgentRunService agentRunService,
                               AgentExecutionService agentExecutionService,
                               AgentRunCancellationService cancellationService,
                               AgentRunDispatchService dispatchService,
                               AgentRunProgressService progressService,
-                              AgentRunRetryService retryService) {
+                              AgentRunRetryService retryService,
+                              AgentRunRevisionService revisionService) {
         this.agentRunService = agentRunService;
         this.agentExecutionService = agentExecutionService;
         this.cancellationService = cancellationService;
         this.dispatchService = dispatchService;
         this.progressService = progressService;
         this.retryService = retryService;
+        this.revisionService = revisionService;
     }
 
     @Operation(summary = "에이전트 비동기 실행 요청 또는 승인 후 작업 재개")
@@ -113,5 +118,14 @@ public class AgentRunController {
     public ApiResponse<AgentRunResponse> retry(@PathVariable String projectId,
                                               @PathVariable String runId) {
         return ApiResponse.success(retryService.retry(projectId, runId));
+    }
+
+    @Operation(summary = "승인 대기 파일 계획에 추가 수정 요청")
+    @PostMapping("/{runId}/revise")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<AgentRunResponse> revise(@PathVariable String projectId,
+                                               @PathVariable String runId,
+                                               @Valid @RequestBody AgentRunRevisionRequest request) {
+        return ApiResponse.success(revisionService.request(projectId, runId, request.instruction()));
     }
 }

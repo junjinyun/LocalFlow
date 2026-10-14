@@ -575,3 +575,12 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .task-status.completed { color: var(--accent-dark); }
 .task-status.failed, .task-status.skipped { color: var(--danger); }
 .task-status.running, .task-status.waiting_approval { color: var(--accent); }
+.plan-revision-form { width: min(680px, 100%); margin-right: auto; display: grid; gap: 7px; }
+.plan-revision-form label { color: var(--muted); font-size: 12px; }
+.plan-revision-form textarea { min-height: 78px; padding: 10px 12px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.plan-revision-form .secondary-button { justify-self: end; }
+.plan-revision-list { display: grid; gap: 8px; }
+.plan-revision-list details { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; }
+.plan-revision-list summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-weight: 700; }
+.plan-revision-list p { color: var(--muted); }
+.plan-revision-list pre { max-height: 300px; overflow: auto; padding: 10px; background: var(--soft); border-radius: 7px; white-space: pre-wrap; }

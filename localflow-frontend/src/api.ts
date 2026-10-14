@@ -141,6 +141,10 @@ export const api = {
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}/cancel`, { method: 'POST' }),
     retry: (projectId: string, runId: string) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}/retry`, { method: 'POST' }),
+    revise: (projectId: string, runId: string, instruction: string) =>
+      request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}/revise`, {
+        method: 'POST', body: JSON.stringify({ instruction }),
+      }),
     execute: (projectId: string, runId: string, approved = false, selectedOperationIds?: string[]) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}/execute`, {
         method: 'POST', body: JSON.stringify({ approved, selectedOperationIds }),
