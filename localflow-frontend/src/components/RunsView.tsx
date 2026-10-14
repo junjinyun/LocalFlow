@@ -397,6 +397,17 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
               {decision?.selectedTags && decision.selectedTags.length > 0 && <><dt>선택 태그</dt><dd>{decision.selectedTags.join(' · ')}</dd></>}
             </dl>
             {!inputSnapshot ? <p className="run-input-empty">이 실행에는 저장된 AI 입력 스냅샷이 없습니다.</p> : <div className="run-input-snapshot">
+              {inputSnapshot.budget && <details>
+                <summary>컨텍스트 예산 <span>{inputSnapshot.budget.usedInputChars.toLocaleString()} / {inputSnapshot.budget.maxInputChars.toLocaleString()}자</span><ChevronRight size={15} /></summary>
+                <dl className="execution-grid">
+                  <dt>예상 입력 토큰</dt><dd>약 {inputSnapshot.budget.estimatedInputTokens.toLocaleString()}</dd>
+                  <dt>포함 파일</dt><dd>{inputSnapshot.budget.includedFiles.length}개</dd>
+                  <dt>본문 잘림</dt><dd>{inputSnapshot.budget.truncatedFiles.length}개</dd>
+                  <dt>제외 파일</dt><dd>{inputSnapshot.budget.excludedFiles.length}개</dd>
+                </dl>
+                {inputSnapshot.budget.truncatedFiles.length > 0 && <ul>{inputSnapshot.budget.truncatedFiles.map(path => <li key={path}><code>{path}</code> · 본문 일부만 포함</li>)}</ul>}
+                {inputSnapshot.budget.excludedFiles.length > 0 && <ul>{inputSnapshot.budget.excludedFiles.map(file => <li key={file.path}><code>{file.path}</code> · {file.reason}</li>)}</ul>}
+              </details>}
               <details>
                 <summary>AI에 본문을 전달한 파일 <span>{inputSnapshot.contextFiles.length}</span><ChevronRight size={15} /></summary>
                 {inputSnapshot.contextFiles.length === 0

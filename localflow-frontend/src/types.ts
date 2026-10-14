@@ -99,6 +99,14 @@ export type AgentInputSnapshot = {
   memories: Array<{ id: string; title: string }>
   systemPrompt: string
   userPrompt: string
+  budget: {
+    maxInputChars: number
+    usedInputChars: number
+    estimatedInputTokens: number
+    includedFiles: string[]
+    truncatedFiles: string[]
+    excludedFiles: Array<{ path: string; reason: string }>
+  } | null
 }
 export type AgentPlan = { summary: string; response: string; operations: FileOperation[] }
 export type AgentApplyResult = {

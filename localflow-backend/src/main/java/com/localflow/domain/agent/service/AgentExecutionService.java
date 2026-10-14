@@ -3,6 +3,7 @@ package com.localflow.domain.agent.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.localflow.domain.agent.domain.AgentFileChangeSnapshot;
 import com.localflow.domain.agent.domain.AgentInputSnapshot;
+import com.localflow.domain.agent.domain.AgentInputSnapshot.InputBudget;
 import com.localflow.domain.agent.domain.AgentProgressStage;
 import com.localflow.domain.agent.domain.AgentPlan;
 import com.localflow.domain.agent.domain.AgentRunStatus;
@@ -59,6 +60,7 @@ public class AgentExecutionService {
     private final AgentRunRepository runRepository;
     private final AgentDecisionService decisionService;
     private final AgentContextService contextService;
+    private final AgentContextBudgetPolicy contextBudgetPolicy;
     private final AgentPlanParser planParser;
     private final TaskDecompositionParser decompositionParser;
     private final TaskDependencyPlanner taskDependencyPlanner;
@@ -80,6 +82,7 @@ public class AgentExecutionService {
                                  AgentRunRepository runRepository,
                                  AgentDecisionService decisionService,
                                  AgentContextService contextService,
+                                 AgentContextBudgetPolicy contextBudgetPolicy,
                                  AgentPlanParser planParser,
                                  TaskDecompositionParser decompositionParser,
                                  TaskDependencyPlanner taskDependencyPlanner,
@@ -100,6 +103,7 @@ public class AgentExecutionService {
         this.runRepository = runRepository;
         this.decisionService = decisionService;
         this.contextService = contextService;
+        this.contextBudgetPolicy = contextBudgetPolicy;
         this.planParser = planParser;
         this.decompositionParser = decompositionParser;
         this.taskDependencyPlanner = taskDependencyPlanner;
@@ -218,8 +222,11 @@ public class AgentExecutionService {
             boolean includeContents = settings.getReadPolicy() != PermissionPolicy.DENY;
             progressService.append(projectId, runId, AgentProgressStage.SELECTING_CONTEXT,
                     "태그와 프로젝트 인덱스를 기준으로 관련 파일을 찾는 중입니다.");
+            AgentContextBudgetPolicy.Budget contextBudget = contextBudgetPolicy.resolve(
+                    provider.providerType(), selectedModel);
             AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
-                    run.getProject(), run.getPrompt(), decision, includeContents);
+                    run.getProject(), run.getPrompt(), decision, includeContents,
+                    contextBudget.maxContextChars());
             cancellationService.checkpoint(projectId, runId);
             String systemPrompt = systemPrompt();
             String userPrompt = userPrompt(run.getPrompt(), decomposition.value(), decision,
@@ -227,9 +234,10 @@ public class AgentExecutionService {
             GenerationRequest generationRequest = new GenerationRequest(
                     systemPrompt, userPrompt, selectedModel, outputSchemas.filePlan());
             GenerationRequest preparedRequest = generationRequest.withSchemaInstruction("파일 변경 계획");
-            run.recordInputSnapshot(objectMapper.writeValueAsString(new AgentInputSnapshot(
-                    contextSnapshot.files(), contextSnapshot.memories(),
-                    preparedRequest.systemPrompt(), preparedRequest.userPrompt())));
+            contextBudgetPolicy.validateRequest(contextBudget,
+                    preparedRequest.systemPrompt(), preparedRequest.userPrompt());
+            run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
+                    contextSnapshot, preparedRequest, contextBudget)));
             run.startPlanning(provider.providerType());
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
@@ -327,18 +335,22 @@ public class AgentExecutionService {
             TaskDecomposition decomposition = decompositionParser.parse(run.getDecompositionJson());
             DecisionResult decision = objectMapper.readValue(run.getDecisionJson(), DecisionResult.class);
             String combinedPrompt = run.getPrompt() + "\n\n추가 수정 요청:\n" + revisionInstruction;
+            AgentContextBudgetPolicy.Budget contextBudget = contextBudgetPolicy.resolve(
+                    provider.providerType(), selectedModel);
             AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
                     run.getProject(), combinedPrompt, decision,
-                    settings.getReadPolicy() != PermissionPolicy.DENY);
+                    settings.getReadPolicy() != PermissionPolicy.DENY,
+                    contextBudget.maxContextChars());
             String systemPrompt = systemPrompt() + "\n기존 계획을 그대로 반복하지 말고 추가 수정 요청을 반영한 새 전체 계획을 반환하라.";
             String userPrompt = userPrompt(combinedPrompt, decomposition, decision, contextSnapshot.content())
                     + "\n\n현재 승인 대기 계획:\n" + planParser.toJson(previousPlan);
             GenerationRequest request = new GenerationRequest(
                     systemPrompt, userPrompt, selectedModel, outputSchemas.filePlan());
             GenerationRequest prepared = request.withSchemaInstruction("수정된 파일 변경 계획");
-            run.recordInputSnapshot(objectMapper.writeValueAsString(new AgentInputSnapshot(
-                    contextSnapshot.files(), contextSnapshot.memories(),
-                    prepared.systemPrompt(), prepared.userPrompt())));
+            contextBudgetPolicy.validateRequest(contextBudget,
+                    prepared.systemPrompt(), prepared.userPrompt());
+            run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
+                    contextSnapshot, prepared, contextBudget)));
             run.startPlanning(provider.providerType());
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
@@ -426,6 +438,8 @@ public class AgentExecutionService {
         Map<String, AgentTaskStatus> statuses = new HashMap<>();
         executions.forEach(execution -> statuses.put(execution.taskId(), execution.status()));
         boolean includeContents = settings.getReadPolicy() != PermissionPolicy.DENY;
+        AgentContextBudgetPolicy.Budget contextBudget = contextBudgetPolicy.resolve(
+                provider.providerType(), selectedModel);
         boolean anyFailed = false;
 
         for (int index = 0; index < executions.size(); index++) {
@@ -467,16 +481,18 @@ public class AgentExecutionService {
                         notice -> recordProviderRetry(projectId, run, AgentProgressStage.DECIDING, notice));
                 String decisionJson = objectMapper.writeValueAsString(decision);
                 AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
-                        run.getProject(), task.instruction(), decision, includeContents);
+                        run.getProject(), task.instruction(), decision, includeContents,
+                        contextBudget.maxContextChars());
                 String systemPrompt = systemPrompt();
                 String taskPrompt = userPrompt(task.instruction(), singleTask, decision,
                         contextSnapshot.content());
                 GenerationRequest request = new GenerationRequest(
                         systemPrompt, taskPrompt, selectedModel, outputSchemas.filePlan());
                 GenerationRequest prepared = request.withSchemaInstruction("파일 변경 계획");
-                run.recordInputSnapshot(objectMapper.writeValueAsString(new AgentInputSnapshot(
-                        contextSnapshot.files(), contextSnapshot.memories(),
-                        prepared.systemPrompt(), prepared.userPrompt())));
+                contextBudgetPolicy.validateRequest(contextBudget,
+                        prepared.systemPrompt(), prepared.userPrompt());
+                run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
+                        contextSnapshot, prepared, contextBudget)));
                 run.startPlanning(provider.providerType());
                 runRepository.saveAndFlush(run);
                 progressService.append(projectId, runId, AgentProgressStage.PLANNING,
@@ -825,6 +841,18 @@ public class AgentExecutionService {
     private Integer sumTokens(Integer first, Integer second) {
         if (first == null && second == null) return null;
         return (first == null ? 0 : first) + (second == null ? 0 : second);
+    }
+
+    private AgentInputSnapshot inputSnapshot(AgentContextService.ContextSnapshot context,
+                                             GenerationRequest request,
+                                             AgentContextBudgetPolicy.Budget budget) {
+        int usedChars = (request.systemPrompt() == null ? 0 : request.systemPrompt().length())
+                + (request.userPrompt() == null ? 0 : request.userPrompt().length());
+        InputBudget inputBudget = new InputBudget(
+                budget.maxInputChars(), usedChars, (usedChars + 3) / 4,
+                context.files(), context.truncatedFiles(), context.excludedFiles());
+        return new AgentInputSnapshot(context.files(), context.memories(),
+                request.systemPrompt(), request.userPrompt(), inputBudget);
     }
 
     private String safeMessage(Exception exception) {

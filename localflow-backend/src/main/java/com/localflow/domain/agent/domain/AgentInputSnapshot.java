@@ -6,12 +6,32 @@ public record AgentInputSnapshot(
         List<String> contextFiles,
         List<MemoryReference> memories,
         String systemPrompt,
-        String userPrompt
+        String userPrompt,
+        InputBudget budget
 ) {
+    public AgentInputSnapshot(List<String> contextFiles, List<MemoryReference> memories,
+                              String systemPrompt, String userPrompt) {
+        this(contextFiles, memories, systemPrompt, userPrompt, null);
+    }
     public AgentInputSnapshot {
         contextFiles = contextFiles == null ? List.of() : List.copyOf(contextFiles);
         memories = memories == null ? List.of() : List.copyOf(memories);
     }
 
     public record MemoryReference(String id, String title) { }
+    public record ExcludedFile(String path, String reason) { }
+    public record InputBudget(
+            int maxInputChars,
+            int usedInputChars,
+            int estimatedInputTokens,
+            List<String> includedFiles,
+            List<String> truncatedFiles,
+            List<ExcludedFile> excludedFiles
+    ) {
+        public InputBudget {
+            includedFiles = includedFiles == null ? List.of() : List.copyOf(includedFiles);
+            truncatedFiles = truncatedFiles == null ? List.of() : List.copyOf(truncatedFiles);
+            excludedFiles = excludedFiles == null ? List.of() : List.copyOf(excludedFiles);
+        }
+    }
 }

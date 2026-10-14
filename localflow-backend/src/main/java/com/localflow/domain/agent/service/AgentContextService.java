@@ -6,6 +6,7 @@ import com.localflow.domain.memory.entity.ProjectMemory;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
 import com.localflow.domain.memory.service.ProjectMemoryScopeMatcher;
 import com.localflow.domain.agent.domain.AgentInputSnapshot.MemoryReference;
+import com.localflow.domain.agent.domain.AgentInputSnapshot.ExcludedFile;
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.DecisionResult;
@@ -66,9 +67,17 @@ public class AgentContextService {
 
     public ContextSnapshot buildSnapshot(Project project, String prompt,
                                          DecisionResult decision, boolean includeContents) {
+        return buildSnapshot(project, prompt, decision, includeContents, properties.contextMaxChars());
+    }
+
+    public ContextSnapshot buildSnapshot(Project project, String prompt,
+                                         DecisionResult decision, boolean includeContents,
+                                         int maxContextChars) {
         List<ProjectFile> files = files(project.getId());
         StringBuilder context = new StringBuilder();
         List<String> contextFiles = new ArrayList<>();
+        List<String> truncatedFiles = new ArrayList<>();
+        List<ExcludedFile> excludedFiles = new ArrayList<>();
         List<ProjectFile> selectedFiles = includeContents ? select(files, prompt, decision) : List.of();
         List<String> selectedPaths = new ArrayList<>(selectedFiles.stream()
                 .map(ProjectFile::getRelativePath).toList());
@@ -86,20 +95,38 @@ public class AgentContextService {
         append(context, "선택된 파일 태그", decision.selectedTags().toString());
         append(context, "전체 파일 인덱스", files.stream()
                 .map(file -> file.getRelativePath() + " tags=" + file.getTags()).toList().toString());
+        int metadataLimit = Math.max(1_000, maxContextChars * 2 / 5);
+        if (context.length() > metadataLimit) context.setLength(metadataLimit);
+        Set<String> selectedPathSet = selectedFiles.stream()
+                .map(ProjectFile::getRelativePath).collect(java.util.stream.Collectors.toSet());
+        files.stream().filter(file -> file.getCategory() != FileCategory.DOCUMENT)
+                .filter(file -> !selectedPathSet.contains(file.getRelativePath()))
+                .forEach(file -> excludedFiles.add(new ExcludedFile(
+                        file.getRelativePath(), "관련도 우선순위에서 컨텍스트 대상 밖으로 제외되었습니다.")));
         if (includeContents) {
             for (ProjectFile file : selectedFiles) {
-                if (context.length() >= properties.contextMaxChars()) break;
+                if (context.length() >= maxContextChars) {
+                    excludedFiles.add(new ExcludedFile(file.getRelativePath(), "컨텍스트 예산이 소진되었습니다."));
+                    continue;
+                }
                 String content = storageService.readText(project.getId(), file.getRelativePath());
-                int remaining = properties.contextMaxChars() - context.length();
-                if (remaining <= 100) break;
-                if (content.length() > remaining) content = content.substring(0, remaining) + "\n[잘림]";
+                int remaining = maxContextChars - context.length();
+                if (remaining <= 100) {
+                    excludedFiles.add(new ExcludedFile(file.getRelativePath(), "파일 본문을 넣을 예산이 부족합니다."));
+                    continue;
+                }
+                if (content.length() > remaining) {
+                    content = content.substring(0, Math.max(0, remaining - 8)) + "\n[잘림]";
+                    truncatedFiles.add(file.getRelativePath());
+                }
                 append(context, "파일: " + file.getRelativePath(), content);
                 contextFiles.add(file.getRelativePath());
             }
         }
-        String value = context.substring(0, Math.min(context.length(), properties.contextMaxChars()));
+        String value = context.substring(0, Math.min(context.length(), maxContextChars));
         return new ContextSnapshot(value, contextFiles, matchedMemories.stream()
-                .map(memory -> new MemoryReference(memory.getId(), memory.getTitle())).toList());
+                .map(memory -> new MemoryReference(memory.getId(), memory.getTitle())).toList(),
+                truncatedFiles, excludedFiles, maxContextChars, value.length());
     }
 
     public String build(Project project, String prompt, DecisionResult decision, boolean includeContents) {
@@ -199,10 +226,14 @@ public class AgentContextService {
     private String nullable(String value) { return value == null || value.isBlank() ? "(없음)" : value; }
     private String abbreviate(String value, int max) { return value.length() <= max ? value : value.substring(0, max) + "…"; }
 
-    public record ContextSnapshot(String content, List<String> files, List<MemoryReference> memories) {
+    public record ContextSnapshot(String content, List<String> files, List<MemoryReference> memories,
+                                  List<String> truncatedFiles, List<ExcludedFile> excludedFiles,
+                                  int maxChars, int usedChars) {
         public ContextSnapshot {
             files = files == null ? List.of() : List.copyOf(files);
             memories = memories == null ? List.of() : List.copyOf(memories);
+            truncatedFiles = truncatedFiles == null ? List.of() : List.copyOf(truncatedFiles);
+            excludedFiles = excludedFiles == null ? List.of() : List.copyOf(excludedFiles);
         }
     }
 }
