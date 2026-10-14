@@ -9,7 +9,7 @@ import MarkdownContent from './MarkdownContent'
 const pollingStatuses = new Set(['PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING', 'CANCEL_REQUESTED'])
 const cancellableStatuses = new Set(['DRAFT', 'PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING', 'WAITING_APPROVAL'])
 
-export default function RunsView({ project, notify }: { project: Project; notify: (message: string, tone?: 'success' | 'error') => void }) {
+export default function RunsView({ project, notify, focusRunId, onFocusHandled }: { project: Project; notify: (message: string, tone?: 'success' | 'error') => void; focusRunId?: string | null; onFocusHandled?: () => void }) {
   const [runs, setRuns] = useState<AgentRunSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [workingId, setWorkingId] = useState<string | null>(null)
@@ -234,6 +234,21 @@ export default function RunsView({ project, notify }: { project: Project; notify
       setDetailLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!focusRunId) return
+    let disposed = false
+    Promise.all([api.runs.get(project.id, focusRunId), api.runs.progress(project.id, focusRunId)])
+      .then(([detail, events]) => {
+        if (disposed) return
+        storeRun(detail)
+        setSelectedRun(detail)
+        setProgress(events)
+        onFocusHandled?.()
+      })
+      .catch(error => notify(error instanceof Error ? error.message : '알림의 실행 기록을 열지 못했습니다.', 'error'))
+    return () => { disposed = true }
+  }, [focusRunId, project.id])
 
   if (selectedRun) {
     const plan = planOf(selectedRun)
