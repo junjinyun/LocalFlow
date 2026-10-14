@@ -165,6 +165,39 @@ export type AgentDecision = {
   rawJson: string | null
 }
 
+export type ValidationCommandPreview = {
+  id: string
+  tool: 'GRADLE' | 'NPM'
+  type: 'COMPILE' | 'TYPECHECK' | 'LINT' | 'TEST' | 'BUILD'
+  workingDirectory: string
+  buildFile: string
+  displayName: string
+  displayCommand: string
+  requiresApproval: boolean
+}
+
+export type ProjectValidationPreview = {
+  projectId: string
+  commands: ValidationCommandPreview[]
+  notices: string[]
+}
+
+export type ValidationCommandResult = {
+  commandId: string
+  tool: ValidationCommandPreview['tool']
+  type: ValidationCommandPreview['type']
+  workingDirectory: string
+  displayName: string
+  displayCommand: string
+  status: 'SUCCESS' | 'FAILED' | 'TIMED_OUT'
+  exitCode: number | null
+  output: string
+  outputTruncated: boolean
+  durationMillis: number
+  startedAt: string
+  completedAt: string
+}
+
 export type AgentRun = {
   runId: string; projectId: string; prompt: string; executionMode: ExecutionMode
   preferredGenerationProvider: ProviderType | null; preferredModel: string | null
@@ -175,6 +208,7 @@ export type AgentRun = {
   applicationResultJson: string | null
   taskExecutionsJson: string | null
   planRevisionsJson: string | null
+  validationResultsJson: string | null
   resultMessage: string | null; errorMessage: string | null; model: string | null
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null

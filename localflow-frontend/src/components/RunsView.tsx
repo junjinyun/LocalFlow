@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, FlaskConical, LoaderCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { api } from '../api'
-import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentPlanRevision, AgentRun, AgentRunProgress, AgentRunSummary, AgentTaskExecution, Project, TaskDecomposition } from '../types'
+import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentPlanRevision, AgentRun, AgentRunProgress, AgentRunSummary, AgentTaskExecution, Project, ProjectValidationPreview, TaskDecomposition, ValidationCommandResult } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
@@ -18,6 +18,9 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
   const [progress, setProgress] = useState<AgentRunProgress[]>([])
   const [selectedOperationIds, setSelectedOperationIds] = useState<string[]>([])
   const [revisionInstruction, setRevisionInstruction] = useState('')
+  const [validationPreview, setValidationPreview] = useState<ProjectValidationPreview | null>(null)
+  const [validationLoading, setValidationLoading] = useState(false)
+  const [validationCommandId, setValidationCommandId] = useState<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -29,6 +32,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
   useEffect(() => {
     setSelectedRun(null)
     setProgress([])
+    setValidationPreview(null)
     load()
   }, [project.id])
 
@@ -186,6 +190,32 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
     try { return JSON.parse(run.planRevisionsJson) as AgentPlanRevision[] } catch { return [] }
   }
 
+  const validationResultsOf = (run: AgentRun): ValidationCommandResult[] => {
+    if (!run.validationResultsJson) return []
+    try { return JSON.parse(run.validationResultsJson) as ValidationCommandResult[] } catch { return [] }
+  }
+
+  const loadValidationPreview = async () => {
+    setValidationLoading(true)
+    try { setValidationPreview(await api.validation.preview(project.id)) }
+    catch (error) { notify(error instanceof Error ? error.message : '검증 명령을 확인하지 못했습니다.', 'error') }
+    finally { setValidationLoading(false) }
+  }
+
+  const executeValidation = async (commandId: string, displayName: string) => {
+    if (!selectedRun || !window.confirm(`${displayName}을(를) 실행할까요?\n\n업로드된 프로젝트의 빌드 스크립트가 로컬 환경에서 실행됩니다.`)) return
+    setValidationCommandId(commandId)
+    try {
+      const result = await api.validation.execute(project.id, selectedRun.runId, commandId)
+      const updated = await api.runs.get(project.id, selectedRun.runId)
+      storeRun(updated)
+      setProgress(await api.runs.progress(project.id, selectedRun.runId))
+      notify(result.status === 'SUCCESS' ? '프로젝트 검증을 통과했습니다.' : '프로젝트 검증 결과를 확인해 주세요.', result.status === 'SUCCESS' ? 'success' : 'error')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '프로젝트 검증을 실행하지 못했습니다.', 'error')
+    } finally { setValidationCommandId(null) }
+  }
+
   const summaryFromRun = (run: AgentRun): AgentRunSummary => {
     const plan = planOf(run)
     return {
@@ -259,6 +289,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
     const applyResult = applyResultOf(selectedRun)
     const taskExecutions = taskExecutionsOf(selectedRun)
     const planRevisions = planRevisionsOf(selectedRun)
+    const validationResults = validationResultsOf(selectedRun)
     const changes = recordedChanges ?? (plan?.operations.map(operation => ({
       operationId: operation.id,
       action: operation.action,
@@ -376,6 +407,40 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
               <strong>추가 수정 요청</strong><p>{revision.revisionInstruction}</p>
               <strong>이전 계획</strong><pre>{JSON.stringify(JSON.parse(revision.planJson), null, 2)}</pre>
             </details>)}</div>
+          </section>}
+
+          {selectedRun.status === 'COMPLETED' && <section className="run-detail-section validation-section">
+            <div className="validation-heading">
+              <div><h3>코드 검증 <span>{validationResults.length}</span></h3><p>프로젝트에서 감지된 제한된 빌드·테스트 명령만 승인 후 실행합니다.</p></div>
+              <button className="secondary-button" disabled={validationLoading} onClick={loadValidationPreview}>
+                {validationLoading ? <LoaderCircle className="spin" size={15} /> : <FlaskConical size={15} />}
+                {validationPreview ? '명령 새로고침' : '검증 명령 확인'}
+              </button>
+            </div>
+            {validationPreview && <>
+              {validationPreview.notices.map(notice => <p className="validation-notice" key={notice}>{notice}</p>)}
+              {validationPreview.commands.length === 0 ? <p className="run-detail-empty">지원하는 Gradle 또는 npm 검증 명령을 찾지 못했습니다.</p> : <ul className="validation-command-list">
+                {validationPreview.commands.map(command => <li key={command.id}>
+                  <div><strong>{command.displayName}</strong><code>{command.workingDirectory} · {command.displayCommand}</code></div>
+                  <button className="secondary-button" disabled={validationCommandId != null} onClick={() => executeValidation(command.id, command.displayName)}>
+                    {validationCommandId === command.id ? <LoaderCircle className="spin" size={14} /> : <Play size={14} />}실행
+                  </button>
+                </li>)}
+              </ul>}
+            </>}
+            {validationResults.length === 0 ? <p className="validation-empty">아직 실행한 검증이 없습니다.</p> : <div className="validation-result-list">
+              {[...validationResults].reverse().map((result, index) => <details key={`${result.commandId}-${result.startedAt}-${index}`}>
+                <summary>
+                  <span className={`validation-status ${result.status.toLowerCase()}`}>{result.status}</span>
+                  <strong>{result.displayName}</strong>
+                  <small>{(result.durationMillis / 1000).toFixed(1)}초 · 종료 코드 {result.exitCode ?? '-'}</small>
+                  <ChevronRight size={15} />
+                </summary>
+                <div className="validation-result-meta"><code>{result.workingDirectory} · {result.displayCommand}</code><time>{new Date(result.completedAt).toLocaleString('ko-KR')}</time></div>
+                {result.outputTruncated && <p className="validation-truncated">출력이 저장 한도를 넘어 일부만 표시합니다.</p>}
+                <pre>{result.output || '출력 내용이 없습니다.'}</pre>
+              </details>)}
+            </div>}
           </section>}
 
           <section className="run-detail-section">

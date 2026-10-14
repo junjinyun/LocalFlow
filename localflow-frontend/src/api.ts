@@ -1,6 +1,7 @@
 import type {
   AgentRun, AgentRunProgress, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileContent, FileSyncResult,
-  MemoryCandidate, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, Provider, ProviderType,
+  MemoryCandidate, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, ProjectValidationPreview,
+  Provider, ProviderType, ValidationCommandResult,
 } from './types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
@@ -162,6 +163,14 @@ export const api = {
     execute: (projectId: string, runId: string, approved = false, selectedOperationIds?: string[]) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}/execute`, {
         method: 'POST', body: JSON.stringify({ approved, selectedOperationIds }),
+      }),
+  },
+  validation: {
+    preview: (projectId: string) =>
+      request<ProjectValidationPreview>(`/api/projects/${projectId}/validation/preview`),
+    execute: (projectId: string, runId: string, commandId: string) =>
+      request<ValidationCommandResult>(`/api/projects/${projectId}/validation/runs/${runId}`, {
+        method: 'POST', body: JSON.stringify({ commandId, approved: true }),
       }),
   },
   providers: (refresh = false) => request<Provider[]>(`/api/ai/providers?refresh=${refresh}`),
