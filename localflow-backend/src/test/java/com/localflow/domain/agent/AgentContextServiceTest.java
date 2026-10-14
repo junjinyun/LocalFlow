@@ -52,6 +52,7 @@ class AgentContextServiceTest {
 
         assertThat(snapshot.files()).containsExactly(source.getRelativePath());
         assertThat(snapshot.content()).contains("## 파일: src/UserService.java", "class UserService {}");
+        assertThat(snapshot.usedChars()).isLessThanOrEqualTo(snapshot.maxChars());
     }
 
     @Test
@@ -73,5 +74,32 @@ class AgentContextServiceTest {
 
         assertThat(snapshot.files()).isEmpty();
         assertThat(snapshot.content()).doesNotContain("## 파일: src/App.java");
+    }
+
+    @Test
+    void reportsTruncatedAndExcludedFilesWhenBudgetIsLimited() {
+        Project project = Project.create("sample", null);
+        ProjectFile primary = ProjectFile.create(project, "src/App.java", "App.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-1");
+        ProjectFile secondary = ProjectFile.create(project, "src/Other.java", "Other.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-2");
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of(primary, secondary));
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of());
+        when(storageService.readText(project.getId(), primary.getRelativePath()))
+                .thenReturn("x".repeat(10_000));
+        when(storageService.readText(project.getId(), secondary.getRelativePath()))
+                .thenReturn("class Other {}");
+        DecisionResult decision = DecisionResult.fallback(
+                "UPDATE_FILES", primary.getRelativePath(), List.of(), "LOW", false);
+
+        AgentContextService.ContextSnapshot snapshot = service.buildSnapshot(
+                project, "App 수정", decision, true, 4_000);
+
+        assertThat(snapshot.usedChars()).isLessThanOrEqualTo(4_000);
+        assertThat(snapshot.truncatedFiles()).contains(primary.getRelativePath());
     }
 }
