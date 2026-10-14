@@ -102,4 +102,35 @@ class AgentContextServiceTest {
         assertThat(snapshot.usedChars()).isLessThanOrEqualTo(4_000);
         assertThat(snapshot.truncatedFiles()).contains(primary.getRelativePath());
     }
+
+    @Test
+    void ranksFilesDeterministicallyAndRecordsSelectionReasons() {
+        Project project = Project.create("sample", null);
+        ProjectFile tagged = ProjectFile.create(project, "src/auth/JwtService.java", "JwtService.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-tagged");
+        tagged.replaceTags(List.of("authentication", "jwt"));
+        ProjectFile other = ProjectFile.create(project, "src/user/UserService.java", "UserService.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-other");
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of(other, tagged));
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of());
+        when(storageService.readText(project.getId(), tagged.getRelativePath())).thenReturn("jwt");
+        when(storageService.readText(project.getId(), other.getRelativePath())).thenReturn("user");
+        DecisionResult decision = DecisionResult.fallback(
+                "INSPECT_FILES", null,
+                List.of(new com.localflow.domain.provider.domain.TaskScope(
+                        "JWT 인증 확인", List.of("authentication"))), "LOW", false);
+
+        var first = service.buildSnapshot(project, "JWT 인증 확인", decision, true);
+        var second = service.buildSnapshot(project, "JWT 인증 확인", decision, true);
+
+        assertThat(first.fileSelections()).isEqualTo(second.fileSelections());
+        assertThat(first.fileSelections().get(0).path()).isEqualTo(tagged.getRelativePath());
+        assertThat(first.fileSelections().get(0).score()).isGreaterThan(first.fileSelections().get(1).score());
+        assertThat(first.fileSelections().get(0).reasons())
+                .anyMatch(reason -> reason.contains("선택 태그 일치"));
+    }
 }

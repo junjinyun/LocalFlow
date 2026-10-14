@@ -477,7 +477,12 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
                 <summary>AI에 본문을 전달한 파일 <span>{inputSnapshot.contextFiles.length}</span><ChevronRight size={15} /></summary>
                 {inputSnapshot.contextFiles.length === 0
                   ? <p>파일 본문을 전달하지 않았습니다.</p>
-                  : <ul>{inputSnapshot.contextFiles.map(path => <li key={path}><code>{path}</code></li>)}</ul>}
+                  : <ul>{inputSnapshot.contextFiles.map(path => {
+                    const selection = inputSnapshot.fileSelections?.find(item => item.path === path)
+                    return <li key={path} className="context-file-reason"><code>{path}</code>
+                      {selection && <><b>{selection.score}점</b><small>{selection.reasons.join(' · ')}</small></>}
+                    </li>
+                  })}</ul>}
               </details>
               <details>
                 <summary>AI에 반영한 프로젝트 기억 <span>{inputSnapshot.memories?.length ?? 0}</span><ChevronRight size={15} /></summary>

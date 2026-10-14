@@ -104,6 +104,7 @@ export type AgentFileChangeSnapshot = {
 }
 export type AgentInputSnapshot = {
   contextFiles: string[]
+  fileSelections?: Array<{ path: string; score: number; reasons: string[] }>
   memories: Array<{ id: string; title: string }>
   systemPrompt: string
   userPrompt: string
