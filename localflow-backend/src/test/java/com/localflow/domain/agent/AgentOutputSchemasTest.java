@@ -35,6 +35,6 @@ class AgentOutputSchemasTest {
                 .extracting(JsonNode::asText)
                 .containsExactly("CREATE", "UPDATE", "MOVE", "DELETE");
         assertThat(operation.path("required")).extracting(JsonNode::asText)
-                .containsExactly("action", "path", "destinationPath", "content");
+                .containsExactly("id", "action", "path", "destinationPath", "content");
     }
 }
