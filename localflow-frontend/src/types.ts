@@ -66,6 +66,14 @@ export type ProjectMemory = {
   active: boolean; globalScope: boolean; scopeTags: string[]; scopeFilePatterns: string[]
   scopeTaskTypes: string[]; createdAt: string; updatedAt: string
 }
+export type MemoryCandidate = {
+  id: string; projectId: string; sourceType: 'CHAT_MESSAGE' | 'AGENT_RUN'; sourceId: string
+  sourceExcerpt: string; status: 'PENDING' | 'APPROVED' | 'REJECTED'; type: MemoryType
+  title: string; content: string; globalScope: boolean; scopeTags: string[]
+  scopeFilePatterns: string[]; scopeTaskTypes: string[]; possibleDuplicateMemoryId: string | null
+  possibleDuplicateTitle: string | null; approvedMemoryId: string | null
+  createdAt: string; reviewedAt: string | null
+}
 
 export type ProviderType = 'JEV' | 'OPENAI' | 'VERTEX_AI' | 'OLLAMA' | 'GEMINI_CLI'
 export type ProviderErrorCode =

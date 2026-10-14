@@ -8,6 +8,8 @@ public enum ErrorCode {
     PROJECT_FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "프로젝트 파일을 찾을 수 없습니다."),
     CHAT_MESSAGE_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅 메시지를 찾을 수 없습니다."),
     MEMORY_NOT_FOUND(HttpStatus.NOT_FOUND, "프로젝트 기억을 찾을 수 없습니다."),
+    MEMORY_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, "프로젝트 기억 후보를 찾을 수 없습니다."),
+    MEMORY_CANDIDATE_ALREADY_REVIEWED(HttpStatus.CONFLICT, "이미 검토된 프로젝트 기억 후보입니다."),
     AGENT_RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "에이전트 실행 기록을 찾을 수 없습니다."),
     INVALID_FILE_PATH(HttpStatus.BAD_REQUEST, "허용되지 않는 파일 경로입니다."),
     UNSUPPORTED_FILE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다."),
