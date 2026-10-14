@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, FlaskConical, LoaderCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { api } from '../api'
-import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentPlanRevision, AgentRun, AgentRunProgress, AgentRunSummary, AgentTaskExecution, Project, ProjectValidationPreview, TaskDecomposition, ValidationCommandResult } from '../types'
+import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentPlanRevision, AgentRun, AgentRunProgress, AgentRunSummary, AgentTaskExecution, AgentUsageSummary, Project, ProjectValidationPreview, TaskDecomposition, ValidationCommandResult } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
@@ -195,6 +195,18 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
     try { return JSON.parse(run.validationResultsJson) as ValidationCommandResult[] } catch { return [] }
   }
 
+  const usageOf = (value: string | null): AgentUsageSummary | null => {
+    if (!value) return null
+    try { return JSON.parse(value) as AgentUsageSummary } catch { return null }
+  }
+
+  const usageCostLabel = (usage: AgentUsageSummary) => {
+    if (usage.costStatus === 'FREE') return '로컬 모델 · 추가 API 비용 없음'
+    if (usage.costStatus === 'UNAVAILABLE') return '모델 단가 정보 없음'
+    const cost = usage.actualCost ?? usage.estimatedCost
+    return cost == null ? '계산 가능한 토큰 정보 없음' : `${usage.currency} ${cost.toFixed(6)}`
+  }
+
   const loadValidationPreview = async () => {
     setValidationLoading(true)
     try { setValidationPreview(await api.validation.preview(project.id)) }
@@ -239,6 +251,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
       errorRetryable: run.errorRetryable,
       errorRecommendedAction: run.errorRecommendedAction,
       providerRetryCount: run.providerRetryCount,
+      usageSummaryJson: run.usageSummaryJson,
       retryOfRunId: run.retryOfRunId,
       retriedByRunId: run.retriedByRunId,
       model: run.model,
@@ -290,6 +303,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
     const taskExecutions = taskExecutionsOf(selectedRun)
     const planRevisions = planRevisionsOf(selectedRun)
     const validationResults = validationResultsOf(selectedRun)
+    const usage = usageOf(selectedRun.usageSummaryJson)
     const changes = recordedChanges ?? (plan?.operations.map(operation => ({
       operationId: operation.id,
       action: operation.action,
@@ -449,7 +463,10 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
               <dt>실행 모드</dt><dd>{selectedRun.executionMode}</dd>
               <dt>AI 제공자</dt><dd>{selectedRun.actualGenerationProvider || selectedRun.preferredGenerationProvider || '지정되지 않음'}</dd>
               <dt>모델</dt><dd>{selectedRun.model || decision?.model || '확인되지 않음'}</dd>
-              <dt>토큰</dt><dd>입력 {selectedRun.inputTokens ?? 0} · 출력 {selectedRun.outputTokens ?? 0}</dd>
+              <dt>토큰 사용량</dt><dd>{usage
+                ? <>예상 입력 {usage.estimatedInputTokens?.toLocaleString() ?? '확인 불가'} · 실제 입력 {usage.actualInputTokens?.toLocaleString() ?? '미제공'} · 실제 출력 {usage.actualOutputTokens?.toLocaleString() ?? '미제공'}</>
+                : <>입력 {selectedRun.inputTokens?.toLocaleString() ?? '미제공'} · 출력 {selectedRun.outputTokens?.toLocaleString() ?? '미제공'}</>}</dd>
+              {usage && <><dt>추정 비용</dt><dd className={`usage-cost ${usage.costStatus.toLowerCase()}`}>{usageCostLabel(usage)}{usage.costStatus === 'PRICED' && <small>설정한 백만 토큰당 단가 기준</small>}</dd></>}
               <dt>제공자 재시도</dt><dd>{selectedRun.providerRetryCount ?? 0}회</dd>
               {selectedRun.providerErrorCode && <><dt>오류 코드</dt><dd><code>{selectedRun.providerErrorCode}</code></dd></>}
               {selectedRun.errorRetryable != null && <><dt>재시도</dt><dd>{selectedRun.errorRetryable ? '가능' : '설정 확인 필요'}</dd></>}
@@ -528,6 +545,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
         <div className="run-list">
           {runs.map(run => {
             const operations = run.fileChanges
+            const usage = usageOf(run.usageSummaryJson)
             const summary = run.resultSummary || (
               run.status === 'COMPLETED' ? 'AI 작업이 완료되었습니다. 상세 화면에서 결과를 확인할 수 있습니다.'
                 : run.status === 'WAITING_APPROVAL' ? '파일 변경 계획이 준비되어 승인을 기다리고 있습니다.'
@@ -564,6 +582,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
                     <strong>{operations.length > 0 ? `${operations.length}개 파일 변경` : '파일 변경 없음'}</strong>
                     {operations.length > 0 && <span>{Object.entries(actionCounts).map(([action, count]) => `${action} ${count}`).join(' · ')}</span>}
                   </span>
+                  {usage && <span className="run-usage-summary">예상 입력 {usage.estimatedInputTokens?.toLocaleString() ?? '-'} · 실제 {usage.actualInputTokens?.toLocaleString() ?? '-'} / {usage.actualOutputTokens?.toLocaleString() ?? '-'} · {usageCostLabel(usage)}</span>}
                   {operations.length > 0 && <span className="run-file-preview">{operations.slice(0, 3).map(operation => <code key={`${operation.action}-${operation.path}`}>{operation.path}</code>)}{operations.length > 3 && <small>외 {operations.length - 3}개</small>}</span>}
                 </div>
                 <ChevronRight className="run-open-icon" size={20} />

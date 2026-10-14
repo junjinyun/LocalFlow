@@ -9,6 +9,7 @@ import com.localflow.domain.agent.domain.AgentPlan;
 import com.localflow.domain.agent.domain.AgentRunStatus;
 import com.localflow.domain.agent.domain.AgentTaskExecution;
 import com.localflow.domain.agent.domain.AgentTaskStatus;
+import com.localflow.domain.agent.domain.AgentUsageSummary;
 import com.localflow.domain.agent.domain.DecomposedTask;
 import com.localflow.domain.agent.domain.TaskDecomposition;
 import com.localflow.domain.agent.domain.ExecutionMode;
@@ -61,6 +62,7 @@ public class AgentExecutionService {
     private final AgentDecisionService decisionService;
     private final AgentContextService contextService;
     private final AgentContextBudgetPolicy contextBudgetPolicy;
+    private final AiUsageCostService usageCostService;
     private final AgentPlanParser planParser;
     private final TaskDecompositionParser decompositionParser;
     private final TaskDependencyPlanner taskDependencyPlanner;
@@ -83,6 +85,7 @@ public class AgentExecutionService {
                                  AgentDecisionService decisionService,
                                  AgentContextService contextService,
                                  AgentContextBudgetPolicy contextBudgetPolicy,
+                                 AiUsageCostService usageCostService,
                                  AgentPlanParser planParser,
                                  TaskDecompositionParser decompositionParser,
                                  TaskDependencyPlanner taskDependencyPlanner,
@@ -104,6 +107,7 @@ public class AgentExecutionService {
         this.decisionService = decisionService;
         this.contextService = contextService;
         this.contextBudgetPolicy = contextBudgetPolicy;
+        this.usageCostService = usageCostService;
         this.planParser = planParser;
         this.decompositionParser = decompositionParser;
         this.taskDependencyPlanner = taskDependencyPlanner;
@@ -242,6 +246,9 @@ public class AgentExecutionService {
                     preparedRequest.systemPrompt(), preparedRequest.userPrompt());
             run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
                     contextSnapshot, preparedRequest, contextBudget)));
+            int estimatedInputTokens = sumEstimate(decompositionInputTokens, estimateTokens(preparedRequest));
+            recordUsage(run, provider.providerType(), selectedModel, estimatedInputTokens,
+                    decompositionInputTokens, decompositionOutputTokens);
             run.startPlanning(provider.providerType());
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
@@ -270,6 +277,8 @@ public class AgentExecutionService {
                     decompositionInputTokens, generation.inputTokens());
             Integer outputTokens = sumTokens(
                     decompositionOutputTokens, generation.outputTokens());
+            recordUsage(run, provider.providerType(), generation.model(), estimatedInputTokens,
+                    inputTokens, outputTokens);
 
             if (needsApproval(run.getExecutionMode(), settings, decision, plan) && !approved) {
                 run.waitForApproval(decisionJson, planJson, changesJson, plan.response(), generation.model(),
@@ -355,6 +364,9 @@ public class AgentExecutionService {
                     prepared.systemPrompt(), prepared.userPrompt());
             run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
                     contextSnapshot, prepared, contextBudget)));
+            int estimatedInputTokens = previousEstimatedInputTokens(run) + estimateTokens(prepared);
+            recordUsage(run, provider.providerType(), selectedModel, estimatedInputTokens,
+                    run.getInputTokens(), run.getOutputTokens());
             run.startPlanning(provider.providerType());
             runRepository.saveAndFlush(run);
             progressService.append(projectId, runId, AgentProgressStage.PLANNING,
@@ -371,6 +383,8 @@ public class AgentExecutionService {
             refreshWaitingTaskPlan(run, revisedPlanJson, changesJson, revisedPlan.response());
             Integer inputTokens = sumTokens(run.getInputTokens(), generated.generation().inputTokens());
             Integer outputTokens = sumTokens(run.getOutputTokens(), generated.generation().outputTokens());
+            recordUsage(run, provider.providerType(), generated.generation().model(), estimatedInputTokens,
+                    inputTokens, outputTokens);
             run.waitForApproval(run.getDecisionJson(), revisedPlanJson, changesJson,
                     revisedPlan.response(), generated.generation().model(), inputTokens, outputTokens);
             runRepository.saveAndFlush(run);
@@ -415,8 +429,9 @@ public class AgentExecutionService {
                                      Integer initialInputTokens, Integer initialOutputTokens,
                                      boolean approvalResume, List<String> selectedOperationIds) throws Exception {
         List<AgentTaskExecution> executions = taskExecutions(run, orderedTasks);
-        int inputTokens = initialInputTokens == null ? 0 : initialInputTokens;
-        int outputTokens = initialOutputTokens == null ? 0 : initialOutputTokens;
+        Integer inputTokens = initialInputTokens;
+        Integer outputTokens = initialOutputTokens;
+        int estimatedInputTokens = initialInputTokens == null ? 0 : initialInputTokens;
 
         if (approvalResume) {
             int waitingIndex = findTask(executions, AgentTaskStatus.WAITING_APPROVAL);
@@ -497,6 +512,9 @@ public class AgentExecutionService {
                         prepared.systemPrompt(), prepared.userPrompt());
                 run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
                         contextSnapshot, prepared, contextBudget)));
+                estimatedInputTokens += estimateTokens(prepared);
+                recordUsage(run, provider.providerType(), selectedModel, estimatedInputTokens,
+                        inputTokens, outputTokens);
                 run.startPlanning(provider.providerType());
                 runRepository.saveAndFlush(run);
                 progressService.append(projectId, runId, AgentProgressStage.PLANNING,
@@ -512,10 +530,10 @@ public class AgentExecutionService {
                 String changesJson = snapshotJson(projectId, plan);
                 taskPlanJson = planJson;
                 taskChangesJson = changesJson;
-                inputTokens += generated.generation().inputTokens() == null
-                        ? 0 : generated.generation().inputTokens();
-                outputTokens += generated.generation().outputTokens() == null
-                        ? 0 : generated.generation().outputTokens();
+                inputTokens = sumTokens(inputTokens, generated.generation().inputTokens());
+                outputTokens = sumTokens(outputTokens, generated.generation().outputTokens());
+                recordUsage(run, provider.providerType(), generated.generation().model(),
+                        estimatedInputTokens, inputTokens, outputTokens);
 
                 if (needsApproval(run.getExecutionMode(), settings, decision, plan)) {
                     AgentTaskExecution waiting = running.withStatus(AgentTaskStatus.WAITING_APPROVAL,
@@ -845,6 +863,35 @@ public class AgentExecutionService {
     private Integer sumTokens(Integer first, Integer second) {
         if (first == null && second == null) return null;
         return (first == null ? 0 : first) + (second == null ? 0 : second);
+    }
+
+    private int estimateTokens(GenerationRequest request) {
+        int chars = (request.systemPrompt() == null ? 0 : request.systemPrompt().length())
+                + (request.userPrompt() == null ? 0 : request.userPrompt().length());
+        return (chars + 3) / 4;
+    }
+
+    private int sumEstimate(Integer knownTokens, int estimatedTokens) {
+        return (knownTokens == null ? 0 : knownTokens) + estimatedTokens;
+    }
+
+    private int previousEstimatedInputTokens(AgentRun run) {
+        if (run.getUsageSummaryJson() == null || run.getUsageSummaryJson().isBlank()) return 0;
+        try {
+            Integer value = objectMapper.readValue(run.getUsageSummaryJson(), AgentUsageSummary.class)
+                    .estimatedInputTokens();
+            return value == null ? 0 : value;
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private void recordUsage(AgentRun run, AiProviderType provider, String model,
+                             Integer estimatedInputTokens,
+                             Integer actualInputTokens, Integer actualOutputTokens) throws Exception {
+        AgentUsageSummary summary = usageCostService.summarize(provider, model,
+                estimatedInputTokens, actualInputTokens, actualOutputTokens);
+        run.recordUsageSummary(objectMapper.writeValueAsString(summary));
     }
 
     private AgentInputSnapshot inputSnapshot(AgentContextService.ContextSnapshot context,

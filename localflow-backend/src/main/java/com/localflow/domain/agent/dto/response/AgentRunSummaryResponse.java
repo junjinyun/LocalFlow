@@ -30,6 +30,7 @@ public record AgentRunSummaryResponse(
         String retryOfRunId,
         String retriedByRunId,
         String model,
+        String usageSummaryJson,
         Instant createdAt,
         Instant updatedAt,
         Instant completedAt
@@ -46,7 +47,7 @@ public record AgentRunSummaryResponse(
                 run.getPreferredModel(), run.getActualGenerationProvider(), run.getStatus(), AgentRunResponse.notice(run),
                 summary, changes, run.getErrorMessage(), run.getProviderErrorCode(),
                 run.getErrorRetryable(), run.getErrorRecommendedAction(), run.getProviderRetryCount(),
-                run.getRetryOfRunId(), run.getRetriedByRunId(), run.getModel(),
+                run.getRetryOfRunId(), run.getRetriedByRunId(), run.getModel(), run.getUsageSummaryJson(),
                 run.getCreatedAt(), run.getUpdatedAt(), run.getCompletedAt());
     }
 
