@@ -2,6 +2,7 @@ package com.localflow.domain.workspace.entity;
 
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.workspace.domain.FileCategory;
+import com.localflow.domain.workspace.domain.FileAnalysisStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.ElementCollection;
@@ -57,6 +58,21 @@ public class ProjectFile {
     @Column(nullable = false, length = 64)
     private String sha256;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private FileAnalysisStatus analysisStatus;
+
+    @Column(length = 80)
+    private String analysisRole;
+
+    @Column(length = 1000)
+    private String analysisSummary;
+
+    @Column(length = 500)
+    private String analysisMessage;
+
+    private Instant analyzedAt;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "project_file_tags", joinColumns = @JoinColumn(name = "project_file_id"))
     @Column(name = "tag", nullable = false, length = 80)
@@ -94,6 +110,7 @@ public class ProjectFile {
         file.language = language;
         file.sizeBytes = sizeBytes;
         file.sha256 = sha256;
+        file.analysisStatus = FileAnalysisStatus.PENDING;
         file.createdAt = Instant.now();
         file.updatedAt = file.createdAt;
         return file;
@@ -121,6 +138,14 @@ public class ProjectFile {
         if (values != null) tags.addAll(values);
     }
 
+    public void recordAnalysis(FileAnalysisStatus status, String role, String summary, String message) {
+        this.analysisStatus = status;
+        this.analysisRole = role;
+        this.analysisSummary = summary;
+        this.analysisMessage = message;
+        this.analyzedAt = Instant.now();
+    }
+
     public void updateTagOverrides(Collection<String> added, Collection<String> excluded) {
         userAddedTags.clear();
         userExcludedTags.clear();
@@ -138,6 +163,13 @@ public class ProjectFile {
     public String getLanguage() { return language; }
     public long getSizeBytes() { return sizeBytes; }
     public String getSha256() { return sha256; }
+    public FileAnalysisStatus getAnalysisStatus() {
+        return analysisStatus == null ? FileAnalysisStatus.PENDING : analysisStatus;
+    }
+    public String getAnalysisRole() { return analysisRole; }
+    public String getAnalysisSummary() { return analysisSummary; }
+    public String getAnalysisMessage() { return analysisMessage; }
+    public Instant getAnalyzedAt() { return analyzedAt; }
     public Set<String> getTags() {
         Set<String> effective = new LinkedHashSet<>(tags);
         effective.addAll(userAddedTags);

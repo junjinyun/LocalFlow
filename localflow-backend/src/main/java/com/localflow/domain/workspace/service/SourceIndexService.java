@@ -1,6 +1,8 @@
 package com.localflow.domain.workspace.service;
 
 import com.localflow.domain.workspace.domain.SymbolType;
+import com.localflow.domain.workspace.domain.FileAnalysisStatus;
+import com.localflow.domain.workspace.domain.FileCategory;
 import com.localflow.domain.workspace.entity.CodeSymbol;
 import com.localflow.domain.workspace.entity.ProjectFile;
 import com.localflow.domain.workspace.repository.CodeSymbolRepository;
@@ -33,13 +35,52 @@ public class SourceIndexService {
 
     public int reindex(ProjectFile projectFile, Path path) {
         symbolRepository.deleteAllByProjectFile_Id(projectFile.getId());
-        projectFile.replaceTags(extractTags(projectFile, path));
-        if (projectFile.getLanguage() == null) {
+        try {
+            projectFile.replaceTags(extractTags(projectFile, path));
+            if (projectFile.getCategory() == FileCategory.DOCUMENT) {
+                projectFile.recordAnalysis(FileAnalysisStatus.UNSUPPORTED_CONTENT, role(projectFile),
+                        "원본 문서를 보관했습니다. 문서 본문 분석은 MVP 범위에 포함되지 않습니다.",
+                        "문서 본문 분석 미지원");
+                return 0;
+            }
+            if (projectFile.getLanguage() == null) {
+                projectFile.recordAnalysis(FileAnalysisStatus.NO_SYMBOLS, role(projectFile),
+                        summary(projectFile, List.of()), "코드 심볼 추출 대상이 아닌 텍스트 또는 설정 파일입니다.");
+                return 0;
+            }
+            List<CodeSymbol> symbols = extract(projectFile, path);
+            symbolRepository.saveAll(symbols);
+            projectFile.recordAnalysis(symbols.isEmpty() ? FileAnalysisStatus.NO_SYMBOLS : FileAnalysisStatus.ANALYZED,
+                    role(projectFile), summary(projectFile, symbols),
+                    symbols.isEmpty() ? "인식된 코드 심볼이 없습니다." : null);
+            return symbols.size();
+        } catch (RuntimeException exception) {
+            projectFile.recordAnalysis(FileAnalysisStatus.FAILED, role(projectFile),
+                    "파일 분석 중 오류가 발생했습니다.", exception.getMessage());
             return 0;
         }
-        List<CodeSymbol> symbols = extract(projectFile, path);
-        symbolRepository.saveAll(symbols);
-        return symbols.size();
+    }
+
+    private String role(ProjectFile file) {
+        Set<String> tags = file.getTags();
+        if (tags.contains("controller")) return "요청 처리 컨트롤러";
+        if (tags.contains("service")) return "비즈니스 서비스";
+        if (tags.contains("repository")) return "데이터 저장소";
+        if (tags.contains("entity")) return "도메인 엔티티";
+        if (tags.contains("dto")) return "데이터 전달 객체";
+        if (tags.contains("test")) return "테스트 코드";
+        if (tags.contains("configuration") || tags.contains("build-config")) return "설정 파일";
+        if (tags.contains("frontend")) return "프론트엔드 구성 요소";
+        if (file.getCategory() == FileCategory.DOCUMENT) return "프로젝트 문서";
+        if (file.getCategory() == FileCategory.SOURCE_CODE) return "소스 코드";
+        return "프로젝트 자료";
+    }
+
+    private String summary(ProjectFile file, List<CodeSymbol> symbols) {
+        String kind = file.getLanguage() == null ? file.getCategory().name() : file.getLanguage();
+        if (symbols.isEmpty()) return kind + " 파일이며 자동 태그 " + file.getTags().size() + "개를 식별했습니다.";
+        String names = symbols.stream().limit(5).map(CodeSymbol::getName).reduce((a, b) -> a + ", " + b).orElse("");
+        return kind + " 파일에서 코드 심볼 " + symbols.size() + "개(" + names + ")를 식별했습니다.";
     }
 
     private Set<String> extractTags(ProjectFile file, Path path) {
@@ -82,7 +123,7 @@ public class SourceIndexService {
             String value = Files.readString(path, StandardCharsets.UTF_8);
             return value.length() <= maxChars ? value : value.substring(0, maxChars);
         } catch (IOException exception) {
-            return "";
+            throw new IllegalStateException("파일 내용을 읽지 못했습니다.", exception);
         }
     }
 
@@ -111,7 +152,7 @@ public class SourceIndexService {
             }
             return symbols;
         } catch (IOException exception) {
-            return List.of();
+            throw new IllegalStateException("코드 심볼을 분석하지 못했습니다.", exception);
         }
     }
 

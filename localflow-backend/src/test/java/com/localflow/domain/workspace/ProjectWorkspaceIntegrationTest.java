@@ -11,6 +11,7 @@ import com.localflow.domain.project.service.ProjectService;
 import com.localflow.domain.agent.domain.ExecutionMode;
 import com.localflow.domain.workspace.dto.FileContentResponse;
 import com.localflow.domain.workspace.dto.FileSyncResponse;
+import com.localflow.domain.workspace.domain.FileAnalysisStatus;
 import com.localflow.domain.workspace.service.ProjectFileService;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -55,6 +56,12 @@ class ProjectWorkspaceIntegrationTest {
         FileContentResponse content = fileService.readContent(project.id(), javaFileId);
         assertThat(content.symbols()).extracting("name").contains("Main", "run");
         assertThat(content.file().tags()).contains("source-code", "java");
+        var analysis = fileService.analysis(project.id(), javaFileId);
+        assertThat(analysis.status()).isEqualTo(FileAnalysisStatus.ANALYZED);
+        assertThat(analysis.role()).isEqualTo("소스 코드");
+        assertThat(analysis.summary()).contains("코드 심볼 2개");
+        assertThat(analysis.symbols()).extracting("name").contains("Main", "run");
+        assertThat(analysis.analyzedAt()).isNotNull();
 
         MockMultipartFile changedJava = textFile("Main.java", """
                 public class Main {

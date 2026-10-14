@@ -11,6 +11,7 @@ import com.localflow.domain.workspace.domain.FileChangeType;
 import com.localflow.domain.workspace.domain.ProjectFileBackup;
 import com.localflow.domain.workspace.dto.CodeSymbolResponse;
 import com.localflow.domain.workspace.dto.FileContentResponse;
+import com.localflow.domain.workspace.dto.FileAnalysisResponse;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
 import com.localflow.domain.workspace.dto.FileSyncItemResponse;
 import com.localflow.domain.workspace.dto.FileSyncResponse;
@@ -184,6 +185,14 @@ public class ProjectFileService {
                 .findAllByProjectFile_IdOrderByLineNumber(file.getId()).stream()
                 .map(CodeSymbolResponse::from).toList();
         return new FileContentResponse(ProjectFileResponse.from(file), content, symbols);
+    }
+
+    public FileAnalysisResponse analysis(String projectId, String fileId) {
+        ProjectFile file = requireFile(projectId, fileId);
+        List<CodeSymbolResponse> symbols = symbolRepository
+                .findAllByProjectFile_IdOrderByLineNumber(file.getId()).stream()
+                .map(CodeSymbolResponse::from).toList();
+        return FileAnalysisResponse.from(file, symbols);
     }
 
     public Resource resource(String projectId, String fileId) {

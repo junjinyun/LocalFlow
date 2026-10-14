@@ -518,6 +518,25 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .file-tags-panel > div { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .file-tags-panel strong { font-size: 12px; margin-right: 3px; }
 .file-tags-panel small { color: var(--muted); }
+.file-analysis-panel { flex: 0 0 auto; max-height: 245px; overflow: auto; border-bottom: 1px solid var(--line); background: #fcfdfb; }
+.file-analysis-panel > summary { min-height: 42px; padding: 9px 13px; display: flex; align-items: center; gap: 7px; cursor: pointer; color: #51594f; font-size: 12px; list-style: none; }
+.file-analysis-panel > summary::-webkit-details-marker { display: none; }
+.file-analysis-panel > summary::after { content: '펼치기'; margin-left: auto; color: var(--muted); font-size: 10px; }
+.file-analysis-panel[open] > summary::after { content: '접기'; }
+.analysis-status { margin-left: 5px; padding: 3px 7px; border-radius: 999px; background: #edf1e9; color: #5f715a; font: 9px 'DM Mono', monospace; }
+.analysis-status.failed { background: #f6e8e6; color: var(--danger); }
+.analysis-status.unsupported_content { background: #f4efe2; color: #806d3f; }
+.file-analysis-content { padding: 0 14px 13px; display: grid; gap: 8px; }
+.file-analysis-content dl { margin: 0; display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 5px 10px; font-size: 11px; }
+.file-analysis-content dt { color: var(--muted); }
+.file-analysis-content dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-analysis-content p, .file-analysis-content small, .analysis-loading { margin: 0; color: #666e63; font-size: 11px; line-height: 1.55; }
+.analysis-loading { padding: 0 14px 13px; }
+.analysis-tag-groups { display: grid; gap: 5px; }
+.analysis-tag-groups > span { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 10px; }
+.analysis-tag-groups b { min-width: 63px; color: #747c71; }
+.analysis-tag-groups code { padding: 2px 5px; border-radius: 4px; background: #edf1e9; color: #566052; }
+.analysis-tag-groups i { color: var(--muted); font-style: normal; }
 .tag-chip { padding: 3px 7px; border: 1px solid #d9dfd4; border-radius: 999px; background: #f1f4ee; color: #596255; font-size: 11px; }
 .tag-chip.custom { border-color: #adc2a4; background: #e5eee0; color: #40563b; }
 .tag-preview { display: flex; gap: 5px; flex-wrap: wrap; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: #f7f8f5; }

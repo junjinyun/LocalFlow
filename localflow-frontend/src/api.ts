@@ -1,5 +1,5 @@
 import type {
-  AgentRun, AgentRunProgress, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileContent, FileSyncResult,
+  AgentRun, AgentRunProgress, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileAnalysis, FileContent, FileSyncResult,
   MemoryCandidate, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, ProjectValidationPreview,
   Provider, ProviderType, ValidationCommandResult,
 } from './types'
@@ -53,6 +53,7 @@ export const api = {
   files: {
     list: (projectId: string) => request<ProjectFile[]>(`/api/projects/${projectId}/files`),
     content: (projectId: string, fileId: string) => request<FileContent>(`/api/projects/${projectId}/files/${fileId}/content`),
+    analysis: (projectId: string, fileId: string) => request<FileAnalysis>(`/api/projects/${projectId}/files/${fileId}/analysis`),
     sync: (projectId: string, files: File[], fullSync: boolean, scopedSync: boolean,
       scopePaths: string[], forceReindex: boolean,
       onProgress?: (percent: number) => void) => {
