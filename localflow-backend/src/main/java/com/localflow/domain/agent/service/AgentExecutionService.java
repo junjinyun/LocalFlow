@@ -852,7 +852,7 @@ public class AgentExecutionService {
                 budget.maxInputChars(), usedChars, (usedChars + 3) / 4,
                 context.files(), context.truncatedFiles(), context.excludedFiles());
         return new AgentInputSnapshot(context.files(), context.memories(),
-                request.systemPrompt(), request.userPrompt(), inputBudget);
+                request.systemPrompt(), request.userPrompt(), inputBudget, context.fileSelections());
     }
 
     private String safeMessage(Exception exception) {

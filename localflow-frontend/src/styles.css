@@ -393,6 +393,9 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .run-input-snapshot ul { max-height: 220px; margin: 0; padding: 10px 12px 10px 30px; overflow: auto; color: #5d665b; }
 .run-input-snapshot li + li { margin-top: 5px; }
 .run-input-snapshot code { overflow-wrap: anywhere; font: 10px/1.5 'DM Mono', Consolas, monospace; }
+.run-input-snapshot .context-file-reason { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 8px; }
+.context-file-reason b { color: #5d7459; font-size: 9px; font-weight: 650; }
+.context-file-reason small { grid-column: 1 / -1; color: #8a9188; font-size: 9px; }
 .run-input-snapshot pre { max-height: 420px; margin: 0; padding: 13px; overflow: auto; color: #3f493d; background: #fcfdfb; font: 10px/1.6 'DM Mono', Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .decision-task-list { margin: 0; padding-left: 1.2rem; }
 .decision-task-list li + li { margin-top: 0.45rem; }

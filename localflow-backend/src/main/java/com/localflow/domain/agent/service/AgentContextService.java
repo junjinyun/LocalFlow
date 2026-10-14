@@ -6,6 +6,7 @@ import com.localflow.domain.memory.entity.ProjectMemory;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
 import com.localflow.domain.memory.service.ProjectMemoryScopeMatcher;
 import com.localflow.domain.agent.domain.AgentInputSnapshot.MemoryReference;
+import com.localflow.domain.agent.domain.AgentInputSnapshot.FileSelection;
 import com.localflow.domain.agent.domain.AgentInputSnapshot.ExcludedFile;
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.provider.config.AiProviderProperties;
@@ -78,14 +79,14 @@ public class AgentContextService {
         List<String> contextFiles = new ArrayList<>();
         List<String> truncatedFiles = new ArrayList<>();
         List<ExcludedFile> excludedFiles = new ArrayList<>();
-        List<ProjectFile> selectedFiles = includeContents ? select(files, prompt, decision) : List.of();
+        List<ScoredFile> selectedFiles = includeContents ? select(files, prompt, decision) : List.of();
         List<String> selectedPaths = new ArrayList<>(selectedFiles.stream()
-                .map(ProjectFile::getRelativePath).toList());
+                .map(value -> value.file().getRelativePath()).toList());
         if (decision.targetPath() != null && !selectedPaths.contains(decision.targetPath())) {
             selectedPaths.add(decision.targetPath());
         }
         Set<String> selectedTags = new LinkedHashSet<>(decision.selectedTags());
-        selectedFiles.forEach(file -> selectedTags.addAll(file.getTags()));
+        selectedFiles.forEach(value -> selectedTags.addAll(value.file().getTags()));
         List<ProjectMemory> matchedMemories = matchedMemories(project.getId(), decision.actionType(),
                 selectedTags, selectedPaths);
         append(context, "프로젝트", project.getName() + "\n설명: " + nullable(project.getDescription()));
@@ -98,13 +99,14 @@ public class AgentContextService {
         int metadataLimit = Math.max(1_000, maxContextChars * 2 / 5);
         if (context.length() > metadataLimit) context.setLength(metadataLimit);
         Set<String> selectedPathSet = selectedFiles.stream()
-                .map(ProjectFile::getRelativePath).collect(java.util.stream.Collectors.toSet());
+                .map(value -> value.file().getRelativePath()).collect(java.util.stream.Collectors.toSet());
         files.stream().filter(file -> file.getCategory() != FileCategory.DOCUMENT)
                 .filter(file -> !selectedPathSet.contains(file.getRelativePath()))
                 .forEach(file -> excludedFiles.add(new ExcludedFile(
                         file.getRelativePath(), "관련도 우선순위에서 컨텍스트 대상 밖으로 제외되었습니다.")));
         if (includeContents) {
-            for (ProjectFile file : selectedFiles) {
+            for (ScoredFile selected : selectedFiles) {
+                ProjectFile file = selected.file();
                 if (context.length() >= maxContextChars) {
                     excludedFiles.add(new ExcludedFile(file.getRelativePath(), "컨텍스트 예산이 소진되었습니다."));
                     continue;
@@ -126,50 +128,60 @@ public class AgentContextService {
         String value = context.substring(0, Math.min(context.length(), maxContextChars));
         return new ContextSnapshot(value, contextFiles, matchedMemories.stream()
                 .map(memory -> new MemoryReference(memory.getId(), memory.getTitle())).toList(),
-                truncatedFiles, excludedFiles, maxContextChars, value.length());
+                truncatedFiles, excludedFiles, maxContextChars, value.length(),
+                selectedFiles.stream().map(ScoredFile::selection).toList());
     }
 
     public String build(Project project, String prompt, DecisionResult decision, boolean includeContents) {
         return buildSnapshot(project, prompt, decision, includeContents).content();
     }
 
-    private List<ProjectFile> select(List<ProjectFile> files, String prompt, DecisionResult decision) {
+    private List<ScoredFile> select(List<ProjectFile> files, String prompt, DecisionResult decision) {
         List<ProjectFile> readable = files.stream()
                 .filter(file -> file.getCategory() != FileCategory.DOCUMENT).toList();
-        Set<ProjectFile> selected = new LinkedHashSet<>();
         List<TaskScope> scopes = decision.taskScopes().isEmpty()
                 ? List.of(new TaskScope(prompt, decision.selectedTags())) : decision.taskScopes();
-        int perTask = Math.max(2, MAX_CONTEXT_FILES / scopes.size());
-        for (TaskScope scope : scopes) {
-            readable.stream()
-                    .sorted(Comparator.comparingInt((ProjectFile file) -> score(
-                                    file, tokens(scope.instruction()), decision.targetPath(), scope.tags())).reversed()
-                            .thenComparing(ProjectFile::getRelativePath))
-                    .limit(perTask)
-                    .forEach(file -> {
-                        if (selected.size() < MAX_CONTEXT_FILES) selected.add(file);
-                    });
-        }
-        if (selected.size() < MAX_CONTEXT_FILES) {
-            readable.stream()
-                    .sorted(Comparator.comparingInt((ProjectFile file) -> score(
-                                    file, tokens(prompt), decision.targetPath(), decision.selectedTags())).reversed()
-                            .thenComparing(ProjectFile::getRelativePath))
-                    .forEach(file -> {
-                        if (selected.size() < MAX_CONTEXT_FILES) selected.add(file);
-                    });
-        }
-        return List.copyOf(selected);
+        return readable.stream().map(file -> rank(file, prompt, decision, scopes))
+                .sorted(Comparator.comparingInt(ScoredFile::score).reversed()
+                        .thenComparing(value -> value.file().getRelativePath()))
+                .limit(MAX_CONTEXT_FILES).toList();
     }
 
-    private int score(ProjectFile file, Set<String> terms, String targetPath, List<String> selectedTags) {
-        if (file.getRelativePath().equals(targetPath)) return 10_000;
+    private ScoredFile rank(ProjectFile file, String prompt, DecisionResult decision, List<TaskScope> scopes) {
+        ScoreDetail best = score(file, tokens(prompt), decision.targetPath(), decision.selectedTags());
+        for (TaskScope scope : scopes) {
+            ScoreDetail candidate = score(file, tokens(scope.instruction()), decision.targetPath(), scope.tags());
+            if (candidate.score() > best.score()) best = candidate;
+        }
+        List<String> reasons = best.reasons().isEmpty()
+                ? List.of("파일 경로 기준의 안정적인 보조 순위") : best.reasons();
+        return new ScoredFile(file, best.score(),
+                new FileSelection(file.getRelativePath(), best.score(), reasons));
+    }
+
+    private ScoreDetail score(ProjectFile file, Set<String> terms, String targetPath, List<String> selectedTags) {
         String path = file.getRelativePath().toLowerCase(Locale.ROOT);
         int score = 0;
-        for (String tag : selectedTags) if (file.getTags().contains(tag)) score += 100;
-        for (String term : terms) if (path.contains(term)) score += 10;
-        if (path.endsWith("readme.md")) score += 2;
-        return score;
+        List<String> reasons = new ArrayList<>();
+        if (file.getRelativePath().equals(targetPath)) {
+            score += 10_000;
+            reasons.add("AI가 지정한 대상 파일과 일치");
+        }
+        List<String> matchedTags = selectedTags.stream().filter(file.getTags()::contains).sorted().toList();
+        if (!matchedTags.isEmpty()) {
+            score += matchedTags.size() * 100;
+            reasons.add("선택 태그 일치: " + String.join(", ", matchedTags));
+        }
+        List<String> matchedTerms = terms.stream().filter(path::contains).sorted().toList();
+        if (!matchedTerms.isEmpty()) {
+            score += matchedTerms.size() * 10;
+            reasons.add("요청 키워드가 경로에 포함: " + String.join(", ", matchedTerms));
+        }
+        if (path.endsWith("readme.md")) {
+            score += 2;
+            reasons.add("프로젝트 안내 파일");
+        }
+        return new ScoreDetail(score, List.copyOf(reasons));
     }
 
     private String taskDescription(List<TaskScope> scopes) {
@@ -228,12 +240,16 @@ public class AgentContextService {
 
     public record ContextSnapshot(String content, List<String> files, List<MemoryReference> memories,
                                   List<String> truncatedFiles, List<ExcludedFile> excludedFiles,
-                                  int maxChars, int usedChars) {
+                                  int maxChars, int usedChars, List<FileSelection> fileSelections) {
         public ContextSnapshot {
             files = files == null ? List.of() : List.copyOf(files);
             memories = memories == null ? List.of() : List.copyOf(memories);
             truncatedFiles = truncatedFiles == null ? List.of() : List.copyOf(truncatedFiles);
             excludedFiles = excludedFiles == null ? List.of() : List.copyOf(excludedFiles);
+            fileSelections = fileSelections == null ? List.of() : List.copyOf(fileSelections);
         }
     }
+
+    private record ScoreDetail(int score, List<String> reasons) { }
+    private record ScoredFile(ProjectFile file, int score, FileSelection selection) { }
 }
