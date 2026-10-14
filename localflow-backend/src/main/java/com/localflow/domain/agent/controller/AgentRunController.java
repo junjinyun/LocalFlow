@@ -57,7 +57,8 @@ public class AgentRunController {
                                                 @PathVariable String runId,
                                                 @RequestBody(required = false) AgentRunExecuteRequest request) {
         boolean approved = request != null && request.isApproved();
-        return ApiResponse.success(dispatchService.enqueue(projectId, runId, approved));
+        return ApiResponse.success(dispatchService.enqueue(projectId, runId, approved,
+                request == null ? null : request.selectedOperationIds()));
     }
 
     @Operation(summary = "에이전트 실행 초안 생성")

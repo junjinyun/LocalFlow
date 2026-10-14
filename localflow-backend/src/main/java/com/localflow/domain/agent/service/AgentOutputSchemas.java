@@ -50,8 +50,9 @@ public class AgentOutputSchemas {
                       "items":{
                         "type":"object",
                         "additionalProperties":false,
-                        "required":["action","path","destinationPath","content"],
+                        "required":["id","action","path","destinationPath","content"],
                         "properties":{
+                          "id":{"type":"string","minLength":1},
                           "action":{"type":"string","enum":["CREATE","UPDATE","MOVE","DELETE"]},
                           "path":{"type":"string","minLength":1},
                           "destinationPath":{"type":["string","null"]},

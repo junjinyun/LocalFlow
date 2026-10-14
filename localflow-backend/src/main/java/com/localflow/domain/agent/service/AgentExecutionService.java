@@ -112,7 +112,8 @@ public class AgentExecutionService {
         providers.forEach(provider -> this.providers.put(provider.providerType(), provider));
     }
 
-    public void processQueued(String projectId, String runId, boolean approved, boolean approvalResume) {
+    public void processQueued(String projectId, String runId, boolean approved, boolean approvalResume,
+                              List<String> selectedOperationIds) {
         AgentRun run = runService.requireRun(projectId, runId);
         if (run.getStatus() != AgentRunStatus.PENDING) return;
         try {
@@ -120,7 +121,8 @@ public class AgentExecutionService {
             progressService.append(projectId, runId, AgentProgressStage.PREPARING,
                     "요청을 확인하고 실행 환경을 준비하는 중입니다.");
             if (approvalResume && run.getPlanJson() != null) {
-                AgentPlan storedPlan = planParser.parse(run.getPlanJson());
+                AgentPlan originalPlan = planParser.parse(run.getPlanJson());
+                AgentPlan storedPlan = AgentPlanSelection.select(originalPlan, selectedOperationIds);
                 cancellationService.checkpoint(projectId, runId);
                 progressService.append(projectId, runId, AgentProgressStage.APPLYING,
                         "승인된 파일 변경을 업로드된 프로젝트에 적용하는 중입니다.");
@@ -414,7 +416,7 @@ public class AgentExecutionService {
                 case MOVE -> beforeContent;
                 case DELETE -> null;
             };
-            snapshots.add(new AgentFileChangeSnapshot(operation.action(), operation.path(),
+            snapshots.add(new AgentFileChangeSnapshot(operation.id(), operation.action(), operation.path(),
                     operation.destinationPath(), beforeContent, afterContent));
         }
         return objectMapper.writeValueAsString(snapshots);

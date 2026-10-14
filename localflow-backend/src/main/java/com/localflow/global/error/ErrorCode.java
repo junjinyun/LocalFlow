@@ -24,6 +24,7 @@ public enum ErrorCode {
     REMOTE_OLLAMA_DENIED(HttpStatus.FORBIDDEN,
             "로컬 전용 개인정보 설정에서는 loopback Ollama 주소와 로컬 모델만 사용할 수 있습니다."),
     INVALID_AI_PLAN(HttpStatus.BAD_GATEWAY, "AI가 반환한 파일 작업 계획 형식이 올바르지 않습니다."),
+    INVALID_OPERATION_SELECTION(HttpStatus.BAD_REQUEST, "적용할 파일 작업 선택이 올바르지 않습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다.");
 

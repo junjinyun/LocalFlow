@@ -45,7 +45,7 @@ public class AgentRunRetryService {
         runRepository.save(source);
         runRepository.saveAndFlush(retry);
         eventPublisher.publishEvent(new AgentRunQueuedEvent(
-                projectId, retry.getId(), false, false));
+                projectId, retry.getId(), false, false, null));
         return AgentRunResponse.from(retry);
     }
 }
