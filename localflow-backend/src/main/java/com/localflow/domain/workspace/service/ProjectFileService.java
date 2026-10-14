@@ -91,6 +91,15 @@ public class ProjectFileService {
     public FileSyncResponse synchronize(String projectId, List<MultipartFile> files,
                                         List<String> relativePaths, boolean fullSync, String scope,
                                         boolean forceReindex) {
+        return synchronize(projectId, files, relativePaths, fullSync, scope, forceReindex,
+                scope != null && !scope.isBlank(), scope == null ? List.of() : List.of(scope));
+    }
+
+    @Transactional
+    public FileSyncResponse synchronize(String projectId, List<MultipartFile> files,
+                                        List<String> relativePaths, boolean fullSync, String legacyScope,
+                                        boolean forceReindex, boolean scopedSync,
+                                        List<String> requestedScopes) {
         Project project = projectService.requireProject(projectId);
         validateBatch(files, relativePaths);
 
@@ -99,18 +108,26 @@ public class ProjectFileService {
         String rootDirectory = commonRoot(normalizedOriginal);
         List<String> normalizedPaths = normalizedOriginal.stream()
                 .map(path -> stripRoot(path, rootDirectory)).toList();
-        String normalizedScope = normalizeScope(scope, rootDirectory);
+        List<String> normalizedScopes = normalizeScopes(legacyScope, requestedScopes, rootDirectory);
+        if (scopedSync && normalizedScopes.isEmpty()) {
+            throw new CustomException(ErrorCode.INVALID_REQUEST);
+        }
 
         Map<String, ProjectFile> existing = new HashMap<>();
         fileRepository.findAllByProject_IdOrderByRelativePath(projectId)
                 .forEach(file -> existing.put(file.getRelativePath(), file));
         Set<String> acceptedPaths = validateProjectedLimits(files, normalizedPaths, existing,
-                fullSync, normalizedScope);
+                fullSync, scopedSync, normalizedScopes);
         List<FileSyncItemResponse> changes = new ArrayList<>();
 
         for (int index = 0; index < files.size(); index++) {
             MultipartFile upload = files.get(index);
             String relativePath = normalizedPaths.get(index);
+            if (scopedSync && !inScopes(relativePath, normalizedScopes)) {
+                changes.add(new FileSyncItemResponse(relativePath, FileChangeType.IGNORED,
+                        "선택 동기화 범위 밖의 파일입니다."));
+                continue;
+            }
             String ignoreReason = ignoreReason(relativePath);
             if (ignoreReason != null) {
                 changes.add(new FileSyncItemResponse(relativePath, FileChangeType.IGNORED, ignoreReason));
@@ -134,7 +151,8 @@ public class ProjectFileService {
 
         if (fullSync) {
             for (ProjectFile stale : existing.values()) {
-                if (!acceptedPaths.contains(stale.getRelativePath()) && inScope(stale.getRelativePath(), normalizedScope)) {
+                if (!acceptedPaths.contains(stale.getRelativePath())
+                        && (!scopedSync || inScopes(stale.getRelativePath(), normalizedScopes))) {
                     symbolRepository.deleteAllByProjectFile_Id(stale.getId());
                     fileRepository.delete(stale);
                     storageService.delete(projectId, stale.getRelativePath());
@@ -145,7 +163,7 @@ public class ProjectFileService {
 
         project.attachDirectory(rootDirectory == null ? "uploaded-files" : rootDirectory);
         fileRepository.flush();
-        return summarize(projectId, changes);
+        return summarize(projectId, changes, scopedSync, normalizedScopes);
     }
 
     public List<ProjectFileResponse> findAll(String projectId) {
@@ -335,11 +353,12 @@ public class ProjectFileService {
         return fileRepository.save(current);
     }
 
-    private FileSyncResponse summarize(String projectId, List<FileSyncItemResponse> changes) {
+    private FileSyncResponse summarize(String projectId, List<FileSyncItemResponse> changes,
+                                       boolean scopedSync, List<String> scopePaths) {
         return new FileSyncResponse(count(changes, FileChangeType.ADDED),
                 count(changes, FileChangeType.MODIFIED), count(changes, FileChangeType.UNCHANGED),
                 count(changes, FileChangeType.DELETED), count(changes, FileChangeType.IGNORED),
-                fileRepository.countByProject_Id(projectId), List.copyOf(changes));
+                fileRepository.countByProject_Id(projectId), scopedSync, scopePaths, List.copyOf(changes));
     }
 
     private int count(List<FileSyncItemResponse> changes, FileChangeType type) {
@@ -358,7 +377,8 @@ public class ProjectFileService {
 
     private Set<String> validateProjectedLimits(List<MultipartFile> files, List<String> paths,
                                                 Map<String, ProjectFile> existing,
-                                                boolean fullSync, String scope) {
+                                                boolean fullSync, boolean scopedSync,
+                                                List<String> scopes) {
         Set<String> accepted = new HashSet<>();
         Set<String> seen = new HashSet<>();
         long projectedBytes = existing.values().stream().mapToLong(ProjectFile::getSizeBytes).sum();
@@ -368,6 +388,7 @@ public class ProjectFileService {
             if (!seen.add(path)) {
                 throw new CustomException(ErrorCode.INVALID_REQUEST);
             }
+            if (scopedSync && !inScopes(path, scopes)) continue;
             if (ignoreReason(path) != null) {
                 continue;
             }
@@ -380,7 +401,8 @@ public class ProjectFileService {
         }
         if (fullSync) {
             for (ProjectFile stale : existing.values()) {
-                if (!accepted.contains(stale.getRelativePath()) && inScope(stale.getRelativePath(), scope)) {
+                if (!accepted.contains(stale.getRelativePath())
+                        && (!scopedSync || inScopes(stale.getRelativePath(), scopes))) {
                     projectedBytes -= stale.getSizeBytes();
                     projectedCount--;
                 }
@@ -404,15 +426,19 @@ public class ProjectFileService {
         return root == null ? path : path.substring(root.length() + 1);
     }
 
-    private String normalizeScope(String scope, String root) {
-        if (scope == null || scope.isBlank()) {
-            return null;
-        }
-        return stripRoot(storageService.normalizeRelativePath(scope), root);
+    private List<String> normalizeScopes(String legacyScope, List<String> requestedScopes, String root) {
+        List<String> values = new ArrayList<>();
+        if (requestedScopes != null) values.addAll(requestedScopes);
+        if (legacyScope != null && !legacyScope.isBlank()) values.add(legacyScope);
+        return values.stream().filter(value -> value != null && !value.isBlank())
+                .map(storageService::normalizeRelativePath)
+                .map(path -> root != null && (path.equals(root) || path.startsWith(root + "/"))
+                        ? (path.equals(root) ? "" : stripRoot(path, root)) : path)
+                .filter(path -> !path.isBlank()).distinct().sorted().toList();
     }
 
-    private boolean inScope(String path, String scope) {
-        return scope == null || path.equals(scope) || path.startsWith(scope + "/");
+    private boolean inScopes(String path, List<String> scopes) {
+        return scopes.stream().anyMatch(scope -> path.equals(scope) || path.startsWith(scope + "/"));
     }
 
     private String ignoreReason(String relativePath) {

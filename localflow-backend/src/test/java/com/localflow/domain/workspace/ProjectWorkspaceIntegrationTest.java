@@ -89,6 +89,27 @@ class ProjectWorkspaceIntegrationTest {
         assertThat(forced.changes().get(0).reason()).contains("다시 분석");
     }
 
+    @Test
+    void synchronizesOnlySelectedDirectoriesWithoutDeletingFilesOutsideScope() {
+        ProjectResponse project = projectService.create(new ProjectCreateRequest("scoped", "test"));
+        fileService.synchronize(project.id(),
+                List.of(textFile("A.java", "class A {}"), textFile("B.java", "class B {}")),
+                List.of("scoped/src/a/A.java", "scoped/src/b/B.java"), true, null);
+
+        FileSyncResponse result = fileService.synchronize(project.id(),
+                List.of(textFile("A.java", "class A { void changed() {} }"),
+                        textFile("B.java", "class B { void changed() {} }")),
+                List.of("scoped/src/a/A.java", "scoped/src/b/B.java"), true, null, false,
+                true, List.of("src/a"));
+
+        assertThat(result.modified()).isEqualTo(1);
+        assertThat(result.ignored()).isEqualTo(1);
+        assertThat(result.deleted()).isZero();
+        assertThat(result.scopePaths()).containsExactly("src/a");
+        assertThat(fileService.findAll(project.id())).extracting("relativePath")
+                .containsExactly("src/a/A.java", "src/b/B.java");
+    }
+
     private MockMultipartFile textFile(String name, String content) {
         return new MockMultipartFile("files", name, "text/plain",
                 content.getBytes(StandardCharsets.UTF_8));

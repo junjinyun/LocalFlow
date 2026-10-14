@@ -214,6 +214,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
   const [syncElapsed, setSyncElapsed] = useState(0)
   const [fullSync, setFullSync] = useState(true)
   const [forceReindex, setForceReindex] = useState(false)
+  const [syncMode, setSyncMode] = useState<'FULL' | 'SELECTED'>('FULL')
   const [scope, setScope] = useState('')
   const [syncResult, setSyncResult] = useState<FileSyncResult | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -455,10 +456,16 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
 
   const syncDirectory = async () => {
     if (!pendingFiles.length) return
+    const scopePaths = Array.from(new Set(scope.split(/[\n,]+/).map(value => value.trim()).filter(Boolean)))
+    if (syncMode === 'SELECTED' && scopePaths.length === 0) {
+      notify('선택 동기화할 파일 또는 디렉터리 경로를 입력해 주세요.', 'error')
+      return
+    }
     setUploadProgress(0)
     setSyncing(true)
     try {
-      const result = await api.files.sync(project.id, pendingFiles, fullSync, scope, forceReindex, setUploadProgress)
+      const result = await api.files.sync(project.id, pendingFiles, fullSync,
+        syncMode === 'SELECTED', scopePaths, forceReindex, setUploadProgress)
       setSyncResult(result)
       setPendingFiles([])
       setSelectionStats(null)
@@ -607,9 +614,10 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
           <div className="sync-box">
             <strong>{pendingFiles.length}개 파일 준비됨</strong>
             {selectionStats && selectionStats.selected !== selectionStats.accepted && <small className="selection-filter-summary">전체 {selectionStats.selected.toLocaleString()}개 중 폴더 제외 {selectionStats.ignoredDirectories.toLocaleString()} · 형식/민감 파일 제외 {selectionStats.unsupported.toLocaleString()} · 대용량 제외 {selectionStats.oversized.toLocaleString()}</small>}
-            <label className="check-row"><input type="checkbox" checked={fullSync} onChange={event => setFullSync(event.target.checked)} />누락 파일 삭제</label>
+            <div className="sync-mode-selector"><button className={syncMode === 'FULL' ? 'active' : ''} onClick={() => setSyncMode('FULL')}>전체 동기화</button><button className={syncMode === 'SELECTED' ? 'active' : ''} onClick={() => setSyncMode('SELECTED')}>선택 범위</button></div>
+            <label className="check-row"><input type="checkbox" checked={fullSync} onChange={event => setFullSync(event.target.checked)} />{syncMode === 'SELECTED' ? '선택 범위의 누락 파일 삭제' : '누락 파일 삭제'}</label>
             <label className="check-row"><input type="checkbox" checked={forceReindex} onChange={event => setForceReindex(event.target.checked)} />동일 파일도 다시 분석</label>
-            <input value={scope} onChange={event => setScope(event.target.value)} placeholder="선택 범위 (선택사항)" />
+            {syncMode === 'SELECTED' && <textarea className="sync-scope-input" value={scope} onChange={event => setScope(event.target.value)} placeholder={'src/main/java\nclient/src/pages/Login.tsx'} />}
             <div className="inline-actions"><button className="small-button" onClick={() => { setPendingFiles([]); setSelectionStats(null); if (directoryInput.current) directoryInput.current.value = '' }}>취소</button><button className="small-button accent" onClick={syncDirectory} disabled={syncing}>{syncing ? '동기화 중…' : '동기화'}</button></div>
           </div>
         )}
@@ -618,6 +626,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
             <button className="sync-summary" onClick={() => setSyncResult(null)} title="결과 닫기">
               <Check size={15} /><span>추가 {syncResult.added} · 수정 {syncResult.modified} · 동일 {syncResult.unchanged} · 삭제 {syncResult.deleted} · 제외 {syncResult.ignored}</span>
             </button>
+            {syncResult.scopedSync && <p className="sync-scope-summary">선택 범위: {syncResult.scopePaths.join(' · ')}</p>}
             <div className="sync-change-list">{syncResult.changes.slice(0, 20).map((change, index) => <div key={`${change.relativePath}-${index}`}><b className={change.changeType.toLowerCase()}>{changeLabels[change.changeType]}</b><span title={change.relativePath}>{change.relativePath}</span>{change.reason && <small>{change.reason}</small>}</div>)}{syncResult.changes.length > 20 && <p>외 {syncResult.changes.length - 20}개 변경</p>}</div>
           </div>
         )}
