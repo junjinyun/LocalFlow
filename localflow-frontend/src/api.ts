@@ -1,6 +1,6 @@
 import type {
   AgentRun, AgentRunProgress, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileContent, FileSyncResult,
-  MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, Provider, ProviderType,
+  MemoryCandidate, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, Provider, ProviderType,
 } from './types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
@@ -123,6 +123,20 @@ export const api = {
     ),
     remove: (projectId: string, memoryId: string) =>
       request<void>(`/api/projects/${projectId}/memories/${memoryId}`, { method: 'DELETE' }),
+  },
+  memoryCandidates: {
+    list: (projectId: string, pendingOnly = true) => request<MemoryCandidate[]>(
+      `/api/projects/${projectId}/memory-candidates?pendingOnly=${pendingOnly}`,
+    ),
+    extract: (projectId: string) => request<MemoryCandidate[]>(
+      `/api/projects/${projectId}/memory-candidates/extract`, { method: 'POST' }),
+    approve: (projectId: string, candidateId: string, candidate: Pick<MemoryCandidate,
+      'type' | 'title' | 'content' | 'globalScope' | 'scopeTags' | 'scopeFilePatterns' | 'scopeTaskTypes'>) =>
+      request<ProjectMemory>(`/api/projects/${projectId}/memory-candidates/${candidateId}/approve`, {
+        method: 'POST', body: JSON.stringify(candidate),
+      }),
+    reject: (projectId: string, candidateId: string) => request<MemoryCandidate>(
+      `/api/projects/${projectId}/memory-candidates/${candidateId}/reject`, { method: 'POST' }),
   },
   runs: {
     list: (projectId: string) => request<AgentRunSummary[]>(`/api/projects/${projectId}/agent-runs`),

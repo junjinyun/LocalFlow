@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Brain, CheckCircle2, Circle, Edit3, LoaderCircle, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, Brain, CheckCircle2, Circle, Edit3, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, XCircle } from 'lucide-react'
 import { api } from '../api'
-import type { MemoryType, Project, ProjectMemory } from '../types'
+import type { MemoryCandidate, MemoryType, Project, ProjectMemory } from '../types'
 import Modal from './Modal'
 
 const labels: Record<MemoryType, string> = {
@@ -11,9 +11,12 @@ const labels: Record<MemoryType, string> = {
 
 export default function MemoryView({ project, notify }: { project: Project; notify: (message: string, tone?: 'success' | 'error') => void }) {
   const [memories, setMemories] = useState<ProjectMemory[]>([])
+  const [candidates, setCandidates] = useState<MemoryCandidate[]>([])
   const [loading, setLoading] = useState(true)
+  const [extracting, setExtracting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<ProjectMemory | null>(null)
+  const [candidateEditing, setCandidateEditing] = useState<MemoryCandidate | null>(null)
   const [type, setType] = useState<MemoryType>('PROJECT_RULE')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -25,7 +28,12 @@ export default function MemoryView({ project, notify }: { project: Project; noti
 
   const load = async () => {
     setLoading(true)
-    try { setMemories(await api.memories.list(project.id, activeOnly)) }
+    try {
+      const [loadedMemories, loadedCandidates] = await Promise.all([
+        api.memories.list(project.id, activeOnly), api.memoryCandidates.list(project.id),
+      ])
+      setMemories(loadedMemories); setCandidates(loadedCandidates)
+    }
     catch (error) { notify(error instanceof Error ? error.message : '프로젝트 기억을 불러오지 못했습니다.', 'error') }
     finally { setLoading(false) }
   }
@@ -33,10 +41,13 @@ export default function MemoryView({ project, notify }: { project: Project; noti
   useEffect(() => { load() }, [project.id, activeOnly])
 
   const openCreate = () => {
-    setEditing(null); setType('PROJECT_RULE'); setTitle(''); setContent(''); setGlobalScope(true); setScopeTags(''); setScopePaths(''); setScopeTasks([]); setModalOpen(true)
+    setEditing(null); setCandidateEditing(null); setType('PROJECT_RULE'); setTitle(''); setContent(''); setGlobalScope(true); setScopeTags(''); setScopePaths(''); setScopeTasks([]); setModalOpen(true)
   }
   const openEdit = (memory: ProjectMemory) => {
-    setEditing(memory); setType(memory.type); setTitle(memory.title); setContent(memory.content); setGlobalScope(memory.globalScope); setScopeTags(memory.scopeTags.join(', ')); setScopePaths(memory.scopeFilePatterns.join(', ')); setScopeTasks(memory.scopeTaskTypes); setModalOpen(true)
+    setEditing(memory); setCandidateEditing(null); setType(memory.type); setTitle(memory.title); setContent(memory.content); setGlobalScope(memory.globalScope); setScopeTags(memory.scopeTags.join(', ')); setScopePaths(memory.scopeFilePatterns.join(', ')); setScopeTasks(memory.scopeTaskTypes); setModalOpen(true)
+  }
+  const openCandidate = (candidate: MemoryCandidate) => {
+    setEditing(null); setCandidateEditing(candidate); setType(candidate.type); setTitle(candidate.title); setContent(candidate.content); setGlobalScope(candidate.globalScope); setScopeTags(candidate.scopeTags.join(', ')); setScopePaths(candidate.scopeFilePatterns.join(', ')); setScopeTasks(candidate.scopeTaskTypes); setModalOpen(true)
   }
 
   const values = (value: string) => Array.from(new Set(value.split(',').map(item => item.trim()).filter(Boolean)))
@@ -45,14 +56,33 @@ export default function MemoryView({ project, notify }: { project: Project; noti
     event.preventDefault()
     try {
       const scoped = { globalScope, scopeTags: values(scopeTags), scopeFilePatterns: values(scopePaths), scopeTaskTypes: scopeTasks }
-      if (editing) await api.memories.update(project.id, { ...editing, type, title: title.trim(), content: content.trim(), ...scoped })
+      if (candidateEditing) await api.memoryCandidates.approve(project.id, candidateEditing.id, { type, title: title.trim(), content: content.trim(), ...scoped })
+      else if (editing) await api.memories.update(project.id, { ...editing, type, title: title.trim(), content: content.trim(), ...scoped })
       else await api.memories.create(project.id, type, title.trim(), content.trim(), globalScope, scoped.scopeTags, scoped.scopeFilePatterns, scoped.scopeTaskTypes)
       await load()
       setModalOpen(false)
-      notify(editing ? '기억을 수정했습니다.' : '새 기억을 등록했습니다.')
+      notify(candidateEditing ? '후보를 편집해 프로젝트 기억으로 등록했습니다.' : editing ? '기억을 수정했습니다.' : '새 기억을 등록했습니다.')
     } catch (error) {
       notify(error instanceof Error ? error.message : '기억을 저장하지 못했습니다.', 'error')
     }
+  }
+
+  const extractCandidates = async () => {
+    setExtracting(true)
+    try {
+      const created = await api.memoryCandidates.extract(project.id)
+      await load()
+      notify(created.length ? `새 기억 후보 ${created.length}개를 찾았습니다.` : '새로 추출할 기억 후보가 없습니다.')
+    } catch (error) { notify(error instanceof Error ? error.message : '기억 후보를 찾지 못했습니다.', 'error') }
+    finally { setExtracting(false) }
+  }
+
+  const rejectCandidate = async (candidate: MemoryCandidate) => {
+    try {
+      await api.memoryCandidates.reject(project.id, candidate.id)
+      setCandidates(current => current.filter(item => item.id !== candidate.id))
+      notify('기억 후보를 거절했습니다.')
+    } catch (error) { notify(error instanceof Error ? error.message : '기억 후보를 거절하지 못했습니다.', 'error') }
   }
 
   const toggle = async (memory: ProjectMemory) => {
@@ -77,8 +107,15 @@ export default function MemoryView({ project, notify }: { project: Project; noti
     <section className="content-panel panel">
       <div className="section-heading">
         <div><p className="eyebrow">PROJECT MEMORY</p><h2>프로젝트 기억</h2><p>활성 항목은 향후 AI 요청의 전처리 맥락으로 사용할 수 있습니다.</p></div>
-        <div className="inline-actions"><label className="check-row"><input type="checkbox" checked={activeOnly} onChange={event => setActiveOnly(event.target.checked)} />활성 항목만</label><button className="icon-button" onClick={load} title="새로고침"><RefreshCw size={16} /></button><button className="primary-button" onClick={openCreate}><Plus size={16} />기억 추가</button></div>
+        <div className="inline-actions"><label className="check-row"><input type="checkbox" checked={activeOnly} onChange={event => setActiveOnly(event.target.checked)} />활성 항목만</label><button className="secondary-button" onClick={extractCandidates} disabled={extracting}>{extracting ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}대화에서 후보 찾기</button><button className="icon-button" onClick={load} title="새로고침"><RefreshCw size={16} /></button><button className="primary-button" onClick={openCreate}><Plus size={16} />기억 추가</button></div>
       </div>
+      {candidates.length > 0 && <section className="memory-candidate-section">
+        <div className="memory-candidate-heading"><div><h3>검토할 기억 후보 <span>{candidates.length}</span></h3><p>승인하기 전에는 AI 요청에 반영되지 않습니다.</p></div></div>
+        <div className="memory-candidate-list">{candidates.map(candidate => <article className="memory-candidate-card" key={candidate.id}>
+          <div className="memory-candidate-copy"><header><span className={`memory-type ${candidate.type.toLowerCase()}`}>{labels[candidate.type]}</span><span className="candidate-source">{candidate.sourceType === 'CHAT_MESSAGE' ? '대화' : '실행 결과'}</span></header><h4>{candidate.title}</h4><p>{candidate.content}</p>{candidate.possibleDuplicateMemoryId && <div className="duplicate-warning"><AlertTriangle size={14} />기존 기억 ‘{candidate.possibleDuplicateTitle ?? '제목 없음'}’과 중복될 수 있습니다.</div>}<details><summary>원문 맥락</summary><p>{candidate.sourceExcerpt}</p></details></div>
+          <div className="candidate-actions"><button className="primary-button" onClick={() => openCandidate(candidate)}><CheckCircle2 size={15} />편집 및 승인</button><button className="ghost-button danger" onClick={() => rejectCandidate(candidate)}><XCircle size={15} />거절</button></div>
+        </article>)}</div>
+      </section>}
       {loading ? <div className="center-state"><LoaderCircle className="spin" /></div> : memories.length === 0 ? (
         <div className="empty-state roomy"><Brain size={31} /><h3>저장된 프로젝트 기억이 없습니다.</h3><p>반드시 지켜야 할 규칙이나 구현 결정을 남겨보세요.</p><button className="secondary-button" onClick={openCreate}>첫 기억 추가</button></div>
       ) : (
@@ -95,7 +132,7 @@ export default function MemoryView({ project, notify }: { project: Project; noti
       )}
 
       {modalOpen && (
-        <Modal title={editing ? '기억 수정' : '새 프로젝트 기억'} onClose={() => setModalOpen(false)}>
+        <Modal title={candidateEditing ? '기억 후보 편집 및 승인' : editing ? '기억 수정' : '새 프로젝트 기억'} onClose={() => setModalOpen(false)}>
           <form className="form-stack" onSubmit={save}>
             <label>유형<select value={type} onChange={event => setType(event.target.value as MemoryType)}>{Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <label>제목<input autoFocus maxLength={150} value={title} onChange={event => setTitle(event.target.value)} placeholder="예: 공통 오류 응답 사용" /></label>
