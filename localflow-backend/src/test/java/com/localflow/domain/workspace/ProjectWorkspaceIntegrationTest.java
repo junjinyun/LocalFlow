@@ -67,6 +67,28 @@ class ProjectWorkspaceIntegrationTest {
                 .extracting("name").contains("Main", "changed");
     }
 
+    @Test
+    void skipsUnchangedFileAndSupportsForcedReindex() {
+        ProjectResponse project = projectService.create(new ProjectCreateRequest("incremental", "test"));
+        MockMultipartFile source = textFile("Main.java", "public class Main {}\n");
+        fileService.synchronize(project.id(), List.of(source),
+                List.of("incremental/src/Main.java"), true, null);
+        var before = fileService.findAll(project.id()).get(0);
+
+        FileSyncResponse skipped = fileService.synchronize(project.id(), List.of(source),
+                List.of("incremental/src/Main.java"), true, null, false);
+        var after = fileService.findAll(project.id()).get(0);
+
+        assertThat(skipped.unchanged()).isEqualTo(1);
+        assertThat(skipped.changes().get(0).reason()).contains("재분석을 생략");
+        assertThat(after.updatedAt()).isEqualTo(before.updatedAt());
+
+        FileSyncResponse forced = fileService.synchronize(project.id(), List.of(source),
+                List.of("incremental/src/Main.java"), true, null, true);
+        assertThat(forced.unchanged()).isEqualTo(1);
+        assertThat(forced.changes().get(0).reason()).contains("다시 분석");
+    }
+
     private MockMultipartFile textFile(String name, String content) {
         return new MockMultipartFile("files", name, "text/plain",
                 content.getBytes(StandardCharsets.UTF_8));

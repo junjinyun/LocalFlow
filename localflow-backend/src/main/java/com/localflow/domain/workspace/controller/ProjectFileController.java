@@ -55,10 +55,11 @@ public class ProjectFileController {
             @RequestPart("files") List<MultipartFile> files,
             @Valid @RequestPart("manifest") FileSyncManifest manifest,
             @RequestParam(defaultValue = "true") boolean fullSync,
+            @RequestParam(defaultValue = "false") boolean forceReindex,
             @RequestParam(required = false) String scope
     ) {
         return ApiResponse.success(fileService.synchronize(
-                        projectId, files, manifest.relativePaths(), fullSync, scope),
+                        projectId, files, manifest.relativePaths(), fullSync, scope, forceReindex),
                 "프로젝트 파일 동기화가 완료되었습니다.");
     }
 

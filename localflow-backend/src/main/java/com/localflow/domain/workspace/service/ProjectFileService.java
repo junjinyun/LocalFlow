@@ -84,6 +84,13 @@ public class ProjectFileService {
     @Transactional
     public FileSyncResponse synchronize(String projectId, List<MultipartFile> files,
                                         List<String> relativePaths, boolean fullSync, String scope) {
+        return synchronize(projectId, files, relativePaths, fullSync, scope, false);
+    }
+
+    @Transactional
+    public FileSyncResponse synchronize(String projectId, List<MultipartFile> files,
+                                        List<String> relativePaths, boolean fullSync, String scope,
+                                        boolean forceReindex) {
         Project project = projectService.requireProject(projectId);
         validateBatch(files, relativePaths);
 
@@ -109,16 +116,20 @@ public class ProjectFileService {
                 changes.add(new FileSyncItemResponse(relativePath, FileChangeType.IGNORED, ignoreReason));
                 continue;
             }
-            Path stored = storageService.store(projectId, relativePath, upload);
-            String sha256 = hash(stored);
+            String sha256 = hash(upload);
             ProjectFile current = existing.get(relativePath);
             FileChangeType changeType = current == null ? FileChangeType.ADDED
                     : current.getSha256().equals(sha256) ? FileChangeType.UNCHANGED : FileChangeType.MODIFIED;
-            ProjectFile saved = saveMetadata(project, current, relativePath, upload.getSize(), sha256);
-            if (changeType != FileChangeType.UNCHANGED || saved.getTags().isEmpty()) {
-                sourceIndexService.reindex(saved, stored);
+            if (changeType == FileChangeType.UNCHANGED && !forceReindex && !current.getTags().isEmpty()) {
+                changes.add(new FileSyncItemResponse(relativePath, changeType,
+                        "SHA-256 해시가 같아 저장과 재분석을 생략했습니다."));
+                continue;
             }
-            changes.add(new FileSyncItemResponse(relativePath, changeType, null));
+            Path stored = storageService.store(projectId, relativePath, upload);
+            ProjectFile saved = saveMetadata(project, current, relativePath, upload.getSize(), sha256);
+            sourceIndexService.reindex(saved, stored);
+            changes.add(new FileSyncItemResponse(relativePath, changeType,
+                    changeType == FileChangeType.UNCHANGED && forceReindex ? "사용자 요청으로 다시 분석했습니다." : null));
         }
 
         if (fullSync) {
@@ -475,6 +486,20 @@ public class ProjectFileService {
             return HexFormat.of().formatHex(digest.digest());
         } catch (IOException | NoSuchAlgorithmException exception) {
             throw new IllegalStateException("파일 해시 계산에 실패했습니다.", exception);
+        }
+    }
+
+    private String hash(MultipartFile file) {
+        try (InputStream input = file.getInputStream()) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                if (read > 0) digest.update(buffer, 0, read);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (IOException | NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("업로드 파일 해시를 계산하지 못했습니다.", exception);
         }
     }
 

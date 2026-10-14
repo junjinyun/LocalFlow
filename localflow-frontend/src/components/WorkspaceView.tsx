@@ -213,6 +213,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
   const [uploadProgress, setUploadProgress] = useState(0)
   const [syncElapsed, setSyncElapsed] = useState(0)
   const [fullSync, setFullSync] = useState(true)
+  const [forceReindex, setForceReindex] = useState(false)
   const [scope, setScope] = useState('')
   const [syncResult, setSyncResult] = useState<FileSyncResult | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -457,7 +458,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
     setUploadProgress(0)
     setSyncing(true)
     try {
-      const result = await api.files.sync(project.id, pendingFiles, fullSync, scope, setUploadProgress)
+      const result = await api.files.sync(project.id, pendingFiles, fullSync, scope, forceReindex, setUploadProgress)
       setSyncResult(result)
       setPendingFiles([])
       setSelectionStats(null)
@@ -607,6 +608,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
             <strong>{pendingFiles.length}개 파일 준비됨</strong>
             {selectionStats && selectionStats.selected !== selectionStats.accepted && <small className="selection-filter-summary">전체 {selectionStats.selected.toLocaleString()}개 중 폴더 제외 {selectionStats.ignoredDirectories.toLocaleString()} · 형식/민감 파일 제외 {selectionStats.unsupported.toLocaleString()} · 대용량 제외 {selectionStats.oversized.toLocaleString()}</small>}
             <label className="check-row"><input type="checkbox" checked={fullSync} onChange={event => setFullSync(event.target.checked)} />누락 파일 삭제</label>
+            <label className="check-row"><input type="checkbox" checked={forceReindex} onChange={event => setForceReindex(event.target.checked)} />동일 파일도 다시 분석</label>
             <input value={scope} onChange={event => setScope(event.target.value)} placeholder="선택 범위 (선택사항)" />
             <div className="inline-actions"><button className="small-button" onClick={() => { setPendingFiles([]); setSelectionStats(null); if (directoryInput.current) directoryInput.current.value = '' }}>취소</button><button className="small-button accent" onClick={syncDirectory} disabled={syncing}>{syncing ? '동기화 중…' : '동기화'}</button></div>
           </div>
@@ -614,7 +616,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
         {syncResult && (
           <div className="sync-result">
             <button className="sync-summary" onClick={() => setSyncResult(null)} title="결과 닫기">
-              <Check size={15} /><span>추가 {syncResult.added} · 수정 {syncResult.modified} · 삭제 {syncResult.deleted} · 제외 {syncResult.ignored}</span>
+              <Check size={15} /><span>추가 {syncResult.added} · 수정 {syncResult.modified} · 동일 {syncResult.unchanged} · 삭제 {syncResult.deleted} · 제외 {syncResult.ignored}</span>
             </button>
             <div className="sync-change-list">{syncResult.changes.slice(0, 20).map((change, index) => <div key={`${change.relativePath}-${index}`}><b className={change.changeType.toLowerCase()}>{changeLabels[change.changeType]}</b><span title={change.relativePath}>{change.relativePath}</span>{change.reason && <small>{change.reason}</small>}</div>)}{syncResult.changes.length > 20 && <p>외 {syncResult.changes.length - 20}개 변경</p>}</div>
           </div>
