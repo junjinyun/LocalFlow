@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JevDecisionProviderTest {
     @Test
@@ -66,6 +67,36 @@ class JevDecisionProviderTest {
             assertThat(result.needsHumanApproval()).isTrue();
             assertThat(result.taskScopes()).hasSize(1);
             assertThat(result.taskScopes().get(0).tags()).containsExactly("authentication", "login");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void rejectsResponseMissingRequiredAnswers() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/v1/systemone/", exchange -> {
+            byte[] response = "{\"answers\":{\"action\":{\"choice\":\"MODIFY_FILES\"}}}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            String baseUrl = "http://localhost:" + server.getAddress().getPort() + "/api/v1";
+            AiProviderProperties properties = new AiProviderProperties(60_000, 20, null,
+                    new AiProviderProperties.Jev("sk-or-test-key", baseUrl, "typesafe/jev-1.13"), null, null);
+            JevDecisionProvider provider = new JevDecisionProvider(properties,
+                    new ProviderHttpClient(mapper), mapper);
+
+            assertThatThrownBy(() -> provider.decide(new DecisionRequest(
+                    "로그인 코드를 수정", List.of("src/Auth.java"),
+                    List.of("authentication"), List.of("로그인 코드를 수정"))))
+                    .isInstanceOf(com.localflow.domain.provider.exception.ProviderCallException.class)
+                    .hasMessageContaining("필수 필드");
         } finally {
             server.stop(0);
         }

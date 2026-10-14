@@ -82,12 +82,20 @@ public class JevDecisionProvider implements DecisionProvider {
         JsonNode response = httpClient.post(providerType(), endpoint(), body,
                 Map.of("Authorization", "Bearer " + properties.apiKey()));
         JsonNode answers = response.path("answers");
+        requireCoreAnswers(answers);
         String action = answerChoice(answers.path("action"), "ANSWER_ONLY");
         String targetKey = answerChoice(answers.path("target"), "none");
         double riskScore = answers.path("risk").path("score").asDouble(0.0);
         String risk = riskScore >= 1.5 ? "HIGH" : riskScore >= 0.75 ? "MEDIUM" : "LOW";
         boolean needsApproval = answers.path("needs_human").path("noul").asDouble(0.0) >= 0.5;
-        if (!ACTIONS.containsKey(action)) action = "ANSWER_ONLY";
+        if (!ACTIONS.containsKey(action)) {
+            throw ProviderCallException.invalidResponse(providerType(),
+                    "JEV가 허용되지 않은 작업 유형을 반환했습니다.");
+        }
+        if (!targets.containsKey(targetKey)) {
+            throw ProviderCallException.invalidResponse(providerType(),
+                    "JEV가 후보에 없는 대상 파일을 반환했습니다.");
+        }
         String targetPath = "none".equals(targetKey) ? null : targets.get(targetKey);
         List<TaskScope> taskScopes = new ArrayList<>();
         Set<String> selectedTags = new LinkedHashSet<>();
@@ -98,6 +106,10 @@ public class JevDecisionProvider implements DecisionProvider {
             Set<String> taskTags = new LinkedHashSet<>();
             for (int slot = 0; slot < 2; slot++) {
                 String tagKey = answerChoice(answers.path(taskTagQuestion(taskIndex, slot)), "none");
+                if (!tags.containsKey(tagKey)) {
+                    throw ProviderCallException.invalidResponse(providerType(),
+                            "JEV가 후보에 없는 파일 태그를 반환했습니다.");
+                }
                 String tag = tags.get(tagKey);
                 if (tag != null && !"none".equals(tagKey)) taskTags.add(tag);
             }
@@ -157,6 +169,18 @@ public class JevDecisionProvider implements DecisionProvider {
     private String answerChoice(JsonNode answer, String fallback) {
         String value = answer.path("choice").asText();
         return value.isBlank() ? fallback : value;
+    }
+
+    private void requireCoreAnswers(JsonNode answers) {
+        boolean valid = answers.isObject()
+                && answers.path("action").hasNonNull("choice")
+                && answers.path("target").hasNonNull("choice")
+                && answers.path("risk").hasNonNull("score")
+                && answers.path("needs_human").hasNonNull("noul");
+        if (!valid) {
+            throw ProviderCallException.invalidResponse(providerType(),
+                    "JEV 판단 응답에 필수 필드가 누락되었습니다.");
+        }
     }
 
     private String endpoint() {

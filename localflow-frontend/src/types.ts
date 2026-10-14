@@ -164,6 +164,9 @@ export type AgentDecision = {
   needsHumanApproval: boolean
   model: string
   rawJson: string | null
+  fallbackUsed?: boolean
+  fallbackReason?: string | null
+  fallbackProviderErrorCode?: ProviderErrorCode | null
 }
 
 export type ValidationCommandPreview = {
