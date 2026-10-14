@@ -122,3 +122,6 @@ localflow:
       queue-timeout: ${GEMINI_CLI_QUEUE_TIMEOUT:15m}
       max-concurrent-requests: ${GEMINI_CLI_MAX_CONCURRENT_REQUESTS:1}
       structured-output-retries: ${GEMINI_CLI_STRUCTURED_OUTPUT_RETRIES:1}
+  ai-cost:
+    currency: ${AI_COST_CURRENCY:USD}
+    rates: ${AI_COST_RATES:}

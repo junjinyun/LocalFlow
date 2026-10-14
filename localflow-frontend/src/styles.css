@@ -322,6 +322,7 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .run-copy > p { margin: 0; color: #777f75; font-size: 11px; }
 .run-copy footer { margin-top: 11px; display: flex; gap: 6px; }
 .run-copy footer span, .run-copy footer code { padding: 4px 7px; color: #747c72; background: #f3f5f0; border-radius: 4px; font-size: 10px; }
+.run-usage-summary { margin-top: 7px; display: block; color: #6f7c6c; font-size: 10px; }
 .run-detail-heading { align-items: center; }
 .run-detail-title { display: flex; align-items: center; gap: 12px; }
 .run-detail-content { max-width: 1000px; margin: 0 auto; padding: 24px; display: grid; gap: 14px; }
@@ -382,6 +383,10 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .run-metadata code { font-family: 'DM Mono', monospace; font-size: 10px; }
 .run-metadata .decision-fallback { padding: 8px 10px; color: #806b38; background: #faf4e3; border-radius: 6px; }
 .decision-fallback code { margin-left: 7px; padding: 2px 5px; background: #f1e4c4; border-radius: 4px; }
+.run-metadata .usage-cost { font-weight: 650; }
+.run-metadata .usage-cost.free { color: #477142; }
+.run-metadata .usage-cost.unavailable { color: #8a7a58; }
+.usage-cost small { margin-left: 7px; color: #8a9188; font-size: 9px; font-weight: 400; }
 .run-input-empty { margin: 15px 0 0; padding-top: 13px; color: #8a9188; border-top: 1px solid #e7eae4; font-size: 11px; }
 .run-input-snapshot { margin-top: 16px; display: grid; gap: 7px; }
 .run-input-snapshot details { overflow: hidden; background: white; border: 1px solid #e4e8e1; border-radius: 8px; }

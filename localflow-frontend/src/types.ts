@@ -202,6 +202,20 @@ export type ValidationCommandResult = {
   completedAt: string
 }
 
+export type AgentUsageSummary = {
+  provider: ProviderType
+  model: string | null
+  estimatedInputTokens: number | null
+  actualInputTokens: number | null
+  actualOutputTokens: number | null
+  costStatus: 'PRICED' | 'FREE' | 'UNAVAILABLE'
+  currency: string
+  inputRatePerMillion: number | null
+  outputRatePerMillion: number | null
+  estimatedCost: number | null
+  actualCost: number | null
+}
+
 export type AgentRun = {
   runId: string; projectId: string; prompt: string; executionMode: ExecutionMode
   preferredGenerationProvider: ProviderType | null; preferredModel: string | null
@@ -213,6 +227,7 @@ export type AgentRun = {
   taskExecutionsJson: string | null
   planRevisionsJson: string | null
   validationResultsJson: string | null
+  usageSummaryJson: string | null
   resultMessage: string | null; errorMessage: string | null; model: string | null
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null
@@ -244,6 +259,7 @@ export type AgentRunSummary = {
     action: FileOperation['action']; path: string; destinationPath: string | null
   }>
   errorMessage: string | null; model: string | null
+  usageSummaryJson: string | null
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null
   providerRetryCount: number
