@@ -5,7 +5,7 @@ import {
   Tags,
 } from 'lucide-react'
 import { api } from '../api'
-import type { FileContent, FileSyncResult, Project, ProjectFile, ProjectSettings } from '../types'
+import type { FileAnalysis, FileContent, FileSyncResult, Project, ProjectFile, ProjectSettings } from '../types'
 import Modal from './Modal'
 
 type Props = {
@@ -211,6 +211,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState<FileContent | null>(null)
+  const [fileAnalysis, setFileAnalysis] = useState<FileAnalysis | null>(null)
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [addedTagText, setAddedTagText] = useState('')
   const [excludedTagText, setExcludedTagText] = useState('')
@@ -266,6 +267,8 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
         parsedTags(addedTagText), parsedTags(excludedTagText))
       setFiles(current => current.map(file => file.id === updated.id ? updated : file))
       setFileContent(current => current ? { ...current, file: updated } : current)
+      const analysis = await api.files.analysis(project.id, selected.id)
+      setFileAnalysis(analysis)
       setTagModalOpen(false)
       notify('파일 태그 보정값을 저장했습니다.')
     } catch (error) {
@@ -301,6 +304,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
   useEffect(() => {
     setSelectedId(null)
     setFileContent(null)
+    setFileAnalysis(null)
     setSyncResult(null)
     setSelectionStats(null)
     setSearch('')
@@ -470,9 +474,14 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
   useEffect(() => {
     if (!selected) {
       setFileContent(null)
+      setFileAnalysis(null)
       setEditor('')
       return
     }
+    setFileAnalysis(null)
+    api.files.analysis(project.id, selected.id)
+      .then(setFileAnalysis)
+      .catch(error => notify(error instanceof Error ? error.message : '파일 분석 정보를 불러오지 못했습니다.', 'error'))
     if (selected.category === 'DOCUMENT') {
       setFileContent(null)
       setEditor('')
@@ -516,6 +525,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
       const saved = await api.files.write(project.id, selected.relativePath, editor, selected.id)
       setFiles(current => current.map(file => file.id === saved.id ? saved : file))
       setFileContent({ ...fileContent, file: saved, content: editor })
+      setFileAnalysis(await api.files.analysis(project.id, selected.id))
       notify('파일을 저장했습니다.')
     } catch (error) {
       notify(error instanceof Error ? error.message : '파일 저장에 실패했습니다.', 'error')
@@ -705,6 +715,15 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
               <div><Tags size={15} /><strong>파일 태그</strong>{selected.tags.length === 0 && <small>태그 없음</small>}{selected.tags.map(tag => <span className={selected.userAddedTags.includes(tag) ? 'tag-chip custom' : 'tag-chip'} key={tag}>{tag}</span>)}</div>
               <button className="small-button" onClick={openTagEditor}>태그 보정</button>
             </div>
+            <details className="file-analysis-panel" open>
+              <summary><GitCompareArrows size={15} /><strong>파일 분석 상세</strong><span className={`analysis-status ${fileAnalysis?.status?.toLowerCase() ?? 'pending'}`}>{fileAnalysis?.status ?? '불러오는 중'}</span></summary>
+              {fileAnalysis ? <div className="file-analysis-content">
+                <dl><dt>전체 경로</dt><dd title={selected.relativePath}>{selected.relativePath}</dd><dt>역할</dt><dd>{fileAnalysis.role || '분류되지 않음'}</dd><dt>분석 시각</dt><dd>{fileAnalysis.analyzedAt ? new Date(fileAnalysis.analyzedAt).toLocaleString('ko-KR') : '분석 전'}</dd></dl>
+                <p>{fileAnalysis.summary || fileAnalysis.message || '저장된 분석 요약이 없습니다.'}</p>
+                {fileAnalysis.message && <small>{fileAnalysis.message}</small>}
+                <div className="analysis-tag-groups"><span><b>자동</b>{fileAnalysis.automaticTags.map(tag => <code key={`auto-${tag}`}>{tag}</code>)}</span><span><b>사용자 추가</b>{fileAnalysis.userAddedTags.length ? fileAnalysis.userAddedTags.map(tag => <code key={`added-${tag}`}>{tag}</code>) : <i>없음</i>}</span><span><b>사용자 제외</b>{fileAnalysis.userExcludedTags.length ? fileAnalysis.userExcludedTags.map(tag => <code key={`excluded-${tag}`}>{tag}</code>) : <i>없음</i>}</span></div>
+              </div> : <p className="analysis-loading">분석 정보를 불러오는 중입니다.</p>}
+            </details>
             {selected.category === 'DOCUMENT' ? (
               <div className="document-preview"><FileText size={38} /><h3>{selected.fileName}</h3><p>문서 본문 미리보기는 확장 기능입니다. 현재는 원본 저장과 다운로드를 지원합니다.</p><a className="primary-button" href={api.files.downloadUrl(project.id, selected.id)}>원본 다운로드</a></div>
             ) : (

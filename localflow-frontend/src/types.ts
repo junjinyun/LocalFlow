@@ -47,6 +47,19 @@ export type ProjectFile = {
 
 export type CodeSymbol = { id: number; name: string; type: string; lineNumber: number }
 export type FileContent = { file: ProjectFile; content: string; symbols: CodeSymbol[] }
+export type FileAnalysis = {
+  file: ProjectFile
+  status: 'PENDING' | 'ANALYZED' | 'NO_SYMBOLS' | 'UNSUPPORTED_CONTENT' | 'FAILED'
+  role: string | null
+  summary: string | null
+  message: string | null
+  automaticTags: string[]
+  effectiveTags: string[]
+  userAddedTags: string[]
+  userExcludedTags: string[]
+  symbols: CodeSymbol[]
+  analyzedAt: string | null
+}
 export type FileSyncItem = {
   relativePath: string
   changeType: 'ADDED' | 'MODIFIED' | 'UNCHANGED' | 'DELETED' | 'IGNORED'

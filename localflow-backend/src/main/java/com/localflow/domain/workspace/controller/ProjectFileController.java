@@ -1,6 +1,7 @@
 package com.localflow.domain.workspace.controller;
 
 import com.localflow.domain.workspace.dto.FileContentResponse;
+import com.localflow.domain.workspace.dto.FileAnalysisResponse;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
 import com.localflow.domain.workspace.dto.FileSyncManifest;
 import com.localflow.domain.workspace.dto.FileSyncResponse;
@@ -75,6 +76,13 @@ public class ProjectFileController {
     public ApiResponse<FileContentResponse> readContent(@PathVariable String projectId,
                                                         @PathVariable String fileId) {
         return ApiResponse.success(fileService.readContent(projectId, fileId));
+    }
+
+    @Operation(summary = "파일 분석 상태와 역할, 태그 및 코드 심볼 상세 조회")
+    @GetMapping("/files/{fileId}/analysis")
+    public ApiResponse<FileAnalysisResponse> analysis(@PathVariable String projectId,
+                                                       @PathVariable String fileId) {
+        return ApiResponse.success(fileService.analysis(projectId, fileId));
     }
 
     @Operation(summary = "파일 다운로드")
