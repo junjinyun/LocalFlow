@@ -52,7 +52,7 @@ export type FileSyncItem = {
 }
 export type FileSyncResult = {
   added: number; modified: number; unchanged: number; deleted: number; ignored: number
-  totalFiles: number; changes: FileSyncItem[]
+  totalFiles: number; scopedSync: boolean; scopePaths: string[]; changes: FileSyncItem[]
 }
 
 export type ChatMessage = {

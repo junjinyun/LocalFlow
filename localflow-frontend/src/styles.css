@@ -307,6 +307,11 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .run-decision b.low { color: #52764f; }
 .run-decision code { color: #61695e; }
 .sync-result { border: 1px solid #dfe8db; border-radius: 7px; overflow: hidden; }
+.sync-mode-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.sync-mode-selector button { padding: 6px; color: #788075; background: #f5f7f3; border: 1px solid #e1e5de; border-radius: 5px; font-size: 10px; }
+.sync-mode-selector button.active { color: #40573d; background: #e8f0e5; border-color: #aebfa9; font-weight: 650; }
+.sync-scope-input { min-height: 58px; padding: 7px; resize: vertical; border: 1px solid #dfe3dc; border-radius: 6px; font-size: 10px; }
+.sync-scope-summary { margin: 0; padding: 7px 9px; color: #687565; background: #f4f7f2; border-top: 1px solid #e4e8e1; font-size: 9px; overflow-wrap: anywhere; }
 .sync-result .sync-summary { width: 100%; border: 0; border-radius: 0; }
 .sync-change-list { max-height: 160px; overflow: auto; background: #fafbf8; border-top: 1px solid #e5e9e1; }
 .sync-change-list > div { padding: 6px 8px; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 3px 7px; border-bottom: 1px solid #eff1ed; font-size: 10px; }

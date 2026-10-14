@@ -59,7 +59,8 @@ public class ProjectFileController {
             @RequestParam(required = false) String scope
     ) {
         return ApiResponse.success(fileService.synchronize(
-                        projectId, files, manifest.relativePaths(), fullSync, scope, forceReindex),
+                        projectId, files, manifest.relativePaths(), fullSync, scope, forceReindex,
+                        manifest.scopedSync(), manifest.scopePaths()),
                 "프로젝트 파일 동기화가 완료되었습니다.");
     }
 
