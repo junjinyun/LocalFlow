@@ -458,6 +458,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
               {selectedRun.retriedByRunId && <><dt>후속 재시도</dt><dd><code>{selectedRun.retriedByRunId}</code></dd></>}
               <dt>실행 ID</dt><dd><code>{selectedRun.runId}</code></dd>
               {decision && <><dt>AI 판단</dt><dd>{decision.actionType} · 위험도 {decision.riskLevel} · 대상 {decision.targetPath || '자동 선택'}</dd></>}
+              {decision?.fallbackUsed && <><dt>판단 대체</dt><dd className="decision-fallback">{decision.fallbackReason || 'JEV 대신 로컬 휴리스틱을 사용했습니다.'}{decision.fallbackProviderErrorCode && <code>{decision.fallbackProviderErrorCode}</code>}</dd></>}
               {decision?.taskScopes && decision.taskScopes.length > 0 && <><dt>작업 분해</dt><dd><ol className="decision-task-list">{decision.taskScopes.map((scope, index) => <li key={`${scope.instruction}-${index}`}><strong>{scope.instruction}</strong>{scope.tags.length > 0 && <small>{scope.tags.join(' · ')}</small>}</li>)}</ol></dd></>}
               {decision?.selectedTags && decision.selectedTags.length > 0 && <><dt>선택 태그</dt><dd>{decision.selectedTags.join(' · ')}</dd></>}
             </dl>

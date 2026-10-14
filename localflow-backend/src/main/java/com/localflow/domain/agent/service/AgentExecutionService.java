@@ -197,6 +197,10 @@ public class AgentExecutionService {
                     settings.getPrivacyMode() == PrivacyMode.EXTERNAL_ALLOWED, decomposition.value(),
                     () -> cancellationService.checkpoint(projectId, runId),
                     notice -> recordProviderRetry(projectId, run, AgentProgressStage.DECIDING, notice));
+            if (decision.fallbackUsed()) {
+                progressService.append(projectId, runId, AgentProgressStage.DECIDING,
+                        decision.fallbackReason());
+            }
             cancellationService.checkpoint(projectId, runId);
             String decisionJson = objectMapper.writeValueAsString(decision);
 
