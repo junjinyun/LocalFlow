@@ -52,7 +52,7 @@ export const api = {
   files: {
     list: (projectId: string) => request<ProjectFile[]>(`/api/projects/${projectId}/files`),
     content: (projectId: string, fileId: string) => request<FileContent>(`/api/projects/${projectId}/files/${fileId}/content`),
-    sync: (projectId: string, files: File[], fullSync: boolean, scope: string,
+    sync: (projectId: string, files: File[], fullSync: boolean, scope: string, forceReindex: boolean,
       onProgress?: (percent: number) => void) => {
       const form = new FormData()
       const relativePaths = files.map(file => file.webkitRelativePath || file.name)
@@ -61,7 +61,7 @@ export const api = {
         [JSON.stringify({ relativePaths })],
         { type: 'application/json' },
       ))
-      const query = new URLSearchParams({ fullSync: String(fullSync) })
+      const query = new URLSearchParams({ fullSync: String(fullSync), forceReindex: String(forceReindex) })
       if (scope.trim()) query.set('scope', scope.trim())
       return new Promise<FileSyncResult>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
