@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Ban, Bot, CheckCircle2, ChevronRight, Clock3, FileClock, LoaderCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { api } from '../api'
-import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentRun, AgentRunProgress, AgentRunSummary, AgentTaskExecution, Project, TaskDecomposition } from '../types'
+import type { AgentApplyResult, AgentDecision, AgentFileChangeSnapshot, AgentInputSnapshot, AgentPlan, AgentPlanRevision, AgentRun, AgentRunProgress, AgentRunSummary, AgentTaskExecution, Project, TaskDecomposition } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
 import FileChangeDiff from './FileChangeDiff'
 import MarkdownContent from './MarkdownContent'
@@ -17,6 +17,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
   const [detailLoading, setDetailLoading] = useState(false)
   const [progress, setProgress] = useState<AgentRunProgress[]>([])
   const [selectedOperationIds, setSelectedOperationIds] = useState<string[]>([])
+  const [revisionInstruction, setRevisionInstruction] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -122,6 +123,20 @@ export default function RunsView({ project, notify }: { project: Project; notify
     } finally { setWorkingId(null) }
   }
 
+  const revise = async (runId: string) => {
+    if (!revisionInstruction.trim()) return
+    setWorkingId(runId)
+    try {
+      const queued = await api.runs.revise(project.id, runId, revisionInstruction.trim())
+      storeRun(queued)
+      setRevisionInstruction('')
+      setProgress(await api.runs.progress(project.id, runId))
+      notify('추가 요청을 반영한 새 계획 생성을 시작했습니다.')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '계획 수정 요청을 시작하지 못했습니다.', 'error')
+    } finally { setWorkingId(null) }
+  }
+
   const planOf = (run: AgentRun): AgentPlan | null => {
     if (!run.planJson) return null
     try { return JSON.parse(run.planJson) as AgentPlan } catch { return null }
@@ -164,6 +179,11 @@ export default function RunsView({ project, notify }: { project: Project; notify
   const taskExecutionsOf = (run: AgentRun): AgentTaskExecution[] => {
     if (!run.taskExecutionsJson) return []
     try { return JSON.parse(run.taskExecutionsJson) as AgentTaskExecution[] } catch { return [] }
+  }
+
+  const planRevisionsOf = (run: AgentRun): AgentPlanRevision[] => {
+    if (!run.planRevisionsJson) return []
+    try { return JSON.parse(run.planRevisionsJson) as AgentPlanRevision[] } catch { return [] }
   }
 
   const summaryFromRun = (run: AgentRun): AgentRunSummary => {
@@ -223,6 +243,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
     const inputSnapshot = inputSnapshotOf(selectedRun)
     const applyResult = applyResultOf(selectedRun)
     const taskExecutions = taskExecutionsOf(selectedRun)
+    const planRevisions = planRevisionsOf(selectedRun)
     const changes = recordedChanges ?? (plan?.operations.map(operation => ({
       operationId: operation.id,
       action: operation.action,
@@ -333,6 +354,15 @@ export default function RunsView({ project, notify }: { project: Project; notify
             </dl>
           </section>}
 
+          {planRevisions.length > 0 && <section className="run-detail-section">
+            <h3>이전 계획 버전 <span>{planRevisions.length}</span></h3>
+            <div className="plan-revision-list">{planRevisions.map(revision => <details key={revision.version}>
+              <summary>버전 {revision.version} · {new Date(revision.archivedAt).toLocaleString('ko-KR')}<ChevronRight size={15} /></summary>
+              <strong>추가 수정 요청</strong><p>{revision.revisionInstruction}</p>
+              <strong>이전 계획</strong><pre>{JSON.stringify(JSON.parse(revision.planJson), null, 2)}</pre>
+            </details>)}</div>
+          </section>}
+
           <section className="run-detail-section">
             <h3>실행 정보</h3>
             <dl className="run-metadata">
@@ -374,6 +404,11 @@ export default function RunsView({ project, notify }: { project: Project; notify
           </section>
 
           <div className="run-detail-actions">
+            {selectedRun.status === 'WAITING_APPROVAL' && selectedRun.planJson && <div className="plan-revision-form">
+              <label htmlFor="plan-revision">계획을 적용하기 전에 보완할 내용을 입력하세요.</label>
+              <textarea id="plan-revision" value={revisionInstruction} maxLength={4000} onChange={event => setRevisionInstruction(event.target.value)} placeholder="예: 테스트 파일도 함께 추가하고 설정 파일은 수정하지 마세요." />
+              <button className="secondary-button" disabled={workingId === selectedRun.runId || !revisionInstruction.trim()} onClick={() => revise(selectedRun.runId)}>수정 계획 다시 생성</button>
+            </div>}
             {selectedRun.status === 'DRAFT' && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => execute(selectedRun.runId, false)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}실행</button>}
             {selectedRun.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === selectedRun.runId || Boolean(selectedRun.planJson && selectedOperationIds.length === 0)} onClick={() => execute(selectedRun.runId, true, selectedRun.planJson ? selectedOperationIds : undefined)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{selectedRun.planJson ? `선택 ${selectedOperationIds.length}개 승인 및 적용` : '승인하고 계속'}</button>}
             {selectedRun.status === 'FAILED' && selectedRun.errorRetryable === true && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => retry(selectedRun.runId)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}다시 실행</button>}

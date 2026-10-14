@@ -308,6 +308,90 @@ public class AgentExecutionService {
         }
     }
 
+    public void processRevision(String projectId, String runId, String revisionInstruction) {
+        AgentRun run = runService.requireRun(projectId, runId);
+        if (run.getStatus() != AgentRunStatus.PENDING || run.getPlanJson() == null) return;
+        try {
+            cancellationService.checkpoint(projectId, runId);
+            progressService.append(projectId, runId, AgentProgressStage.PREPARING,
+                    "기존 계획과 추가 수정 요청을 확인하는 중입니다.");
+            ProjectSettings settings = requireSettings(projectId);
+            GenerationProvider provider = selectProvider(run.getPreferredGenerationProvider(), settings);
+            String requestedModel = run.getPreferredModel() == null || run.getPreferredModel().isBlank()
+                    ? provider.model() : run.getPreferredModel().strip();
+            String selectedModel = selectModel(provider, requestedModel);
+            ensurePrivacy(settings, provider, selectedModel);
+            if (!provider.available()) throw new CustomException(ErrorCode.PROVIDER_NOT_CONFIGURED);
+
+            AgentPlan previousPlan = planParser.parse(run.getPlanJson());
+            TaskDecomposition decomposition = decompositionParser.parse(run.getDecompositionJson());
+            DecisionResult decision = objectMapper.readValue(run.getDecisionJson(), DecisionResult.class);
+            String combinedPrompt = run.getPrompt() + "\n\n추가 수정 요청:\n" + revisionInstruction;
+            AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
+                    run.getProject(), combinedPrompt, decision,
+                    settings.getReadPolicy() != PermissionPolicy.DENY);
+            String systemPrompt = systemPrompt() + "\n기존 계획을 그대로 반복하지 말고 추가 수정 요청을 반영한 새 전체 계획을 반환하라.";
+            String userPrompt = userPrompt(combinedPrompt, decomposition, decision, contextSnapshot.content())
+                    + "\n\n현재 승인 대기 계획:\n" + planParser.toJson(previousPlan);
+            GenerationRequest request = new GenerationRequest(
+                    systemPrompt, userPrompt, selectedModel, outputSchemas.filePlan());
+            GenerationRequest prepared = request.withSchemaInstruction("수정된 파일 변경 계획");
+            run.recordInputSnapshot(objectMapper.writeValueAsString(new AgentInputSnapshot(
+                    contextSnapshot.files(), contextSnapshot.memories(),
+                    prepared.systemPrompt(), prepared.userPrompt())));
+            run.startPlanning(provider.providerType());
+            runRepository.saveAndFlush(run);
+            progressService.append(projectId, runId, AgentProgressStage.PLANNING,
+                    "추가 요청을 반영하여 파일 변경 계획을 다시 생성하는 중입니다.");
+            appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
+            ParsedGeneration<AgentPlan> generated = withProviderRetry(
+                    projectId, run, AgentProgressStage.PLANNING,
+                    () -> structuredGenerationService.generate(
+                            provider, request, planParser::parse, "수정된 파일 변경 계획"));
+            AgentPlan revisedPlan = generated.value();
+            validatePolicies(settings, revisedPlan);
+            String revisedPlanJson = planParser.toJson(revisedPlan);
+            String changesJson = snapshotJson(projectId, revisedPlan);
+            refreshWaitingTaskPlan(run, revisedPlanJson, changesJson, revisedPlan.response());
+            Integer inputTokens = sumTokens(run.getInputTokens(), generated.generation().inputTokens());
+            Integer outputTokens = sumTokens(run.getOutputTokens(), generated.generation().outputTokens());
+            run.waitForApproval(run.getDecisionJson(), revisedPlanJson, changesJson,
+                    revisedPlan.response(), generated.generation().model(), inputTokens, outputTokens);
+            runRepository.saveAndFlush(run);
+            progressService.append(projectId, runId, AgentProgressStage.WAITING_APPROVAL,
+                    "추가 요청을 반영한 새 계획이 준비되어 다시 승인을 기다리고 있습니다.");
+        } catch (AgentRunCancelledException exception) {
+            cancellationService.complete(projectId, runId);
+        } catch (Exception exception) {
+            if (exception instanceof ProviderCallException providerException) {
+                run.failProvider(providerException.getMessage(), providerException.errorCode(),
+                        providerException.retryable(), providerException.recommendedAction());
+            } else run.fail(safeMessage(exception));
+            runRepository.saveAndFlush(run);
+            progressService.append(projectId, runId, AgentProgressStage.FAILED,
+                    "추가 수정 계획을 생성하지 못했습니다: " + safeMessage(exception));
+        }
+    }
+
+    private void refreshWaitingTaskPlan(AgentRun run, String planJson,
+                                        String changesJson, String response) throws Exception {
+        if (run.getTaskExecutionsJson() == null || run.getTaskExecutionsJson().isBlank()) return;
+        var type = objectMapper.getTypeFactory()
+                .constructCollectionType(List.class, AgentTaskExecution.class);
+        List<AgentTaskExecution> executions = new ArrayList<>(
+                objectMapper.readValue(run.getTaskExecutionsJson(), type));
+        for (int index = 0; index < executions.size(); index++) {
+            AgentTaskExecution execution = executions.get(index);
+            if (execution.status() == AgentTaskStatus.WAITING_APPROVAL) {
+                executions.set(index, execution.withStatus(AgentTaskStatus.WAITING_APPROVAL,
+                        planJson, changesJson, response, null));
+                run.recordTaskExecutions(objectMapper.writeValueAsString(executions));
+                return;
+            }
+        }
+        throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
+    }
+
     private void executeTaskSequence(String projectId, String runId, AgentRun run,
                                      ProjectSettings settings, GenerationProvider provider,
                                      String selectedModel, TaskDecomposition decomposition,

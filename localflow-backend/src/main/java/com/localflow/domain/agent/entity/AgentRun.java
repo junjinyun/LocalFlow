@@ -80,6 +80,9 @@ public class AgentRun {
     @Lob
     private String taskExecutionsJson;
 
+    @Lob
+    private String planRevisionsJson;
+
     @Column(length = 2000)
     private String errorMessage;
 
@@ -245,6 +248,11 @@ public class AgentRun {
         touch();
     }
 
+    public void recordPlanRevisions(String planRevisionsJson) {
+        this.planRevisionsJson = planRevisionsJson;
+        touch();
+    }
+
     public void recordProviderRetry() {
         this.providerRetryCount++;
         this.lastProviderRetryAt = Instant.now();
@@ -313,6 +321,7 @@ public class AgentRun {
     public String getResultMessage() { return resultMessage; }
     public String getApplicationResultJson() { return applicationResultJson; }
     public String getTaskExecutionsJson() { return taskExecutionsJson; }
+    public String getPlanRevisionsJson() { return planRevisionsJson; }
     public String getErrorMessage() { return errorMessage; }
     public ProviderErrorCode getProviderErrorCode() { return providerErrorCode; }
     public Boolean getErrorRetryable() { return errorRetryable; }

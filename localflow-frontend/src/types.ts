@@ -131,6 +131,13 @@ export type AgentTaskExecution = {
   resultMessage: string | null
   errorMessage: string | null
 }
+export type AgentPlanRevision = {
+  version: number
+  revisionInstruction: string
+  planJson: string
+  changesJson: string | null
+  archivedAt: string
+}
 export type AgentDecision = {
   actionType: string
   targetPath: string | null
@@ -151,6 +158,7 @@ export type AgentRun = {
   inputSnapshotJson: string | null
   applicationResultJson: string | null
   taskExecutionsJson: string | null
+  planRevisionsJson: string | null
   resultMessage: string | null; errorMessage: string | null; model: string | null
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null
