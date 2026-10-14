@@ -584,3 +584,5 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .plan-revision-list summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-weight: 700; }
 .plan-revision-list p { color: var(--muted); }
 .plan-revision-list pre { max-height: 300px; overflow: auto; padding: 10px; background: var(--soft); border-radius: 7px; white-space: pre-wrap; }
+.notification-setting { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px; background: var(--soft); border-radius: 9px; }
+.notification-setting p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }

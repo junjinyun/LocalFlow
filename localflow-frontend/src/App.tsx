@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Bot, Brain, Files, PlaySquare, Settings, Sparkles } from 'lucide-react'
 import { api } from './api'
 import type { Project, Provider } from './types'
@@ -9,6 +9,7 @@ import ChatView from './components/ChatView'
 import MemoryView from './components/MemoryView'
 import SettingsView from './components/SettingsView'
 import RunsView from './components/RunsView'
+import { browserNotificationsEnabled, useAgentNotifications } from './useAgentNotifications'
 
 type Tab = 'workspace' | 'chat' | 'memory' | 'settings' | 'runs'
 const tabs: { key: Tab; label: string; icon: typeof Files }[] = [
@@ -31,8 +32,17 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [browserNotifications, setBrowserNotifications] = useState(browserNotificationsEnabled)
+  const [focusedRunId, setFocusedRunId] = useState<string | null>(null)
 
   const selected = useMemo(() => projects.find(project => project.id === selectedId) ?? null, [projects, selectedId])
+
+  const openRun = useCallback((runId: string) => {
+    setFocusedRunId(runId)
+    setTab('runs')
+  }, [])
+
+  useAgentNotifications(selected, browserNotifications, openRun)
 
   const notify = (message: string, tone: 'success' | 'error' = 'success') => {
     setToast({ message, tone })
@@ -133,8 +143,8 @@ export default function App() {
               {tab === 'workspace' && <WorkspaceView project={selected} onProjectRefresh={() => refreshProject(selected.id)} notify={notify} />}
               {tab === 'chat' && <ChatView project={selected} providers={providers} notify={notify} />}
               {tab === 'memory' && <MemoryView project={selected} notify={notify} />}
-              {tab === 'runs' && <RunsView project={selected} notify={notify} />}
-              {tab === 'settings' && <SettingsView project={selected} providers={providers} onProvidersRefreshed={setProviders} onUpdated={updateProject} onRemoved={removeProject} notify={notify} />}
+              {tab === 'runs' && <RunsView project={selected} notify={notify} focusRunId={focusedRunId} onFocusHandled={() => setFocusedRunId(null)} />}
+              {tab === 'settings' && <SettingsView project={selected} providers={providers} onProvidersRefreshed={setProviders} onUpdated={updateProject} onRemoved={removeProject} notify={notify} browserNotifications={browserNotifications} onBrowserNotificationsChange={setBrowserNotifications} />}
             </div>
           </>
         )}

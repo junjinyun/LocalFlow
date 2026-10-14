@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, Cloud, HardDrive, LoaderCircle, RefreshCw, Save, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, Bell, Check, Cloud, HardDrive, LoaderCircle, RefreshCw, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { api } from '../api'
 import type { ExecutionMode, PermissionPolicy, PrivacyMode, Project, ProjectSettings, Provider } from '../types'
+import { saveBrowserNotifications } from '../useAgentNotifications'
 
 type Props = {
   project: Project
@@ -10,11 +11,13 @@ type Props = {
   onUpdated: (project: Project) => void
   onRemoved: (projectId: string) => Promise<void> | void
   notify: (message: string, tone?: 'success' | 'error') => void
+  browserNotifications: boolean
+  onBrowserNotificationsChange: (enabled: boolean) => void
 }
 
 const policyLabels: Record<PermissionPolicy, string> = { ALLOW: '항상 허용', CONFIRM: '매번 확인', DENY: '허용 안 함' }
 
-export default function SettingsView({ project, providers, onProvidersRefreshed, onUpdated, onRemoved, notify }: Props) {
+export default function SettingsView({ project, providers, onProvidersRefreshed, onUpdated, onRemoved, notify, browserNotifications, onBrowserNotificationsChange }: Props) {
   const [settings, setSettings] = useState<ProjectSettings | null>(null)
   const [name, setName] = useState(project.name)
   const [description, setDescription] = useState(project.description ?? '')
@@ -69,6 +72,24 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
     catch (error) { notify(error instanceof Error ? error.message : '프로젝트 삭제에 실패했습니다.', 'error') }
   }
 
+  const toggleBrowserNotifications = async () => {
+    if (browserNotifications) {
+      saveBrowserNotifications(false)
+      onBrowserNotificationsChange(false)
+      notify('브라우저 알림을 껐습니다.')
+      return
+    }
+    if (!('Notification' in window)) {
+      notify('이 브라우저는 시스템 알림을 지원하지 않습니다.', 'error')
+      return
+    }
+    const permission = await Notification.requestPermission()
+    const enabled = permission === 'granted'
+    saveBrowserNotifications(enabled)
+    onBrowserNotificationsChange(enabled)
+    notify(enabled ? '브라우저 알림을 켰습니다.' : '브라우저 알림 권한이 허용되지 않았습니다.', enabled ? 'success' : 'error')
+  }
+
   if (!settings) return <div className="center-state"><LoaderCircle className="spin" /><p>설정을 불러오는 중입니다.</p></div>
 
   const policies: { key: keyof ProjectSettings; label: string; detail: string }[] = [
@@ -102,6 +123,10 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
         <section className="settings-card panel"><div className="settings-title"><div className="settings-icon"><ShieldCheck size={19} /></div><div><h2>에이전트 권한</h2><p>향후 에이전트가 파일 작업을 요청할 때 적용됩니다.</p></div></div>
           <div className="mode-grid"><label>실행 모드<select value={settings.executionMode} onChange={event => updatePolicy('executionMode', event.target.value as ExecutionMode)}><option value="CONFIRM_EVERY_STEP">매 단계 확인</option><option value="BALANCED">균형 모드</option><option value="AUTONOMOUS">자율 실행</option></select></label><label>개인정보 모드<select value={settings.privacyMode} onChange={event => updatePolicy('privacyMode', event.target.value as PrivacyMode)}><option value="LOCAL_ONLY">로컬 전용</option><option value="EXTERNAL_ALLOWED">외부 AI 전송 허용</option></select></label></div>
           <div className="policy-list">{policies.map(item => <div className="policy-row" key={item.key}><div><strong>{item.label}</strong><p>{item.detail}</p></div><select value={settings[item.key] as string} onChange={event => updatePolicy(item.key, event.target.value as PermissionPolicy)}><option value="ALLOW">{policyLabels.ALLOW}</option><option value="CONFIRM">{policyLabels.CONFIRM}</option><option value="DENY">{policyLabels.DENY}</option></select></div>)}</div>
+        </section>
+
+        <section className="settings-card panel"><div className="settings-title"><div className="settings-icon"><Bell size={19} /></div><div><h2>브라우저 알림</h2><p>다른 탭을 보고 있을 때 완료·승인 필요·실패 상태를 알려줍니다.</p></div></div>
+          <div className="notification-setting"><div><strong>{browserNotifications ? '알림 사용 중' : '알림 꺼짐'}</strong><p>{'Notification' in window ? `브라우저 권한: ${Notification.permission}` : '현재 브라우저에서 지원하지 않습니다.'}</p></div><button className="secondary-button" type="button" onClick={toggleBrowserNotifications}>{browserNotifications ? '알림 끄기' : '알림 켜기'}</button></div>
         </section>
 
         <section className="danger-card panel"><div><AlertTriangle size={19} /><span><strong>프로젝트 삭제</strong><p>DB 기록과 서버의 업로드 사본을 함께 삭제합니다.</p></span></div><button className="secondary-button danger-text" onClick={remove}><Trash2 size={15} />삭제</button></section>
