@@ -59,6 +59,8 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
           readPolicy: settings.readPolicy, createPolicy: settings.createPolicy,
           editPolicy: settings.editPolicy, movePolicy: settings.movePolicy,
           deletePolicy: settings.deletePolicy, executePolicy: settings.executePolicy,
+          excludedPathPatterns: settings.excludedPathPatterns,
+          excludedExtensions: settings.excludedExtensions,
         }),
       ])
       onUpdated(updatedProject); setSettings(updatedSettings); notify('프로젝트 설정을 저장했습니다.')
@@ -123,6 +125,13 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
         <section className="settings-card panel"><div className="settings-title"><div className="settings-icon"><ShieldCheck size={19} /></div><div><h2>에이전트 권한</h2><p>향후 에이전트가 파일 작업을 요청할 때 적용됩니다.</p></div></div>
           <div className="mode-grid"><label>실행 모드<select value={settings.executionMode} onChange={event => updatePolicy('executionMode', event.target.value as ExecutionMode)}><option value="CONFIRM_EVERY_STEP">매 단계 확인</option><option value="BALANCED">균형 모드</option><option value="AUTONOMOUS">자율 실행</option></select></label><label>개인정보 모드<select value={settings.privacyMode} onChange={event => updatePolicy('privacyMode', event.target.value as PrivacyMode)}><option value="LOCAL_ONLY">로컬 전용</option><option value="EXTERNAL_ALLOWED">외부 AI 전송 허용</option></select></label></div>
           <div className="policy-list">{policies.map(item => <div className="policy-row" key={item.key}><div><strong>{item.label}</strong><p>{item.detail}</p></div><select value={settings[item.key] as string} onChange={event => updatePolicy(item.key, event.target.value as PermissionPolicy)}><option value="ALLOW">{policyLabels.ALLOW}</option><option value="CONFIRM">{policyLabels.CONFIRM}</option><option value="DENY">{policyLabels.DENY}</option></select></div>)}</div>
+        </section>
+
+        <section className="settings-card panel"><div className="settings-title"><div className="settings-icon"><HardDrive size={19} /></div><div><h2>프로젝트 분석 제외 규칙</h2><p>기본 제외 폴더에 더해 동기화·색인에서 제외할 경로와 확장자를 지정합니다.</p></div></div>
+          <div className="form-grid">
+            <label className="full">경로 패턴<textarea rows={4} placeholder={'generated/**\nfixtures/large-data'} value={settings.excludedPathPatterns.join('\n')} onChange={event => setSettings({ ...settings, excludedPathPatterns: event.target.value.split('\n').map(value => value.trim()).filter(Boolean) })} /><small>한 줄에 하나씩 입력합니다. *와 ** 와일드카드를 사용할 수 있습니다.</small></label>
+            <label className="full">확장자<textarea rows={3} placeholder={'log\nmap'} value={settings.excludedExtensions.join('\n')} onChange={event => setSettings({ ...settings, excludedExtensions: event.target.value.split(/[\n,]+/).map(value => value.trim().replace(/^\./, '')).filter(Boolean) })} /><small>점(.) 없이 한 줄에 하나씩 입력합니다.</small></label>
+          </div>
         </section>
 
         <section className="settings-card panel"><div className="settings-title"><div className="settings-icon"><Bell size={19} /></div><div><h2>브라우저 알림</h2><p>다른 탭을 보고 있을 때 완료·승인 필요·실패 상태를 알려줍니다.</p></div></div>
