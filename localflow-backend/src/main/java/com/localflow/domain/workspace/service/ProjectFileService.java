@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
+import java.util.regex.Pattern;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -101,6 +102,7 @@ public class ProjectFileService {
                                         boolean forceReindex, boolean scopedSync,
                                         List<String> requestedScopes) {
         Project project = projectService.requireProject(projectId);
+        ProjectSettings projectSettings = settings(projectId);
         validateBatch(files, relativePaths);
 
         List<String> normalizedOriginal = relativePaths.stream()
@@ -117,7 +119,7 @@ public class ProjectFileService {
         fileRepository.findAllByProject_IdOrderByRelativePath(projectId)
                 .forEach(file -> existing.put(file.getRelativePath(), file));
         Set<String> acceptedPaths = validateProjectedLimits(files, normalizedPaths, existing,
-                fullSync, scopedSync, normalizedScopes);
+                fullSync, scopedSync, normalizedScopes, projectSettings);
         List<FileSyncItemResponse> changes = new ArrayList<>();
 
         for (int index = 0; index < files.size(); index++) {
@@ -128,7 +130,7 @@ public class ProjectFileService {
                         "선택 동기화 범위 밖의 파일입니다."));
                 continue;
             }
-            String ignoreReason = ignoreReason(relativePath);
+            String ignoreReason = ignoreReason(relativePath, projectSettings);
             if (ignoreReason != null) {
                 changes.add(new FileSyncItemResponse(relativePath, FileChangeType.IGNORED, ignoreReason));
                 continue;
@@ -201,16 +203,17 @@ public class ProjectFileService {
     @Transactional
     public ProjectFileResponse write(String projectId, String fileId, FileWriteRequest request) {
         Project project = projectService.requireProject(projectId);
+        ProjectSettings projectSettings = settings(projectId);
         String relativePath = storageService.normalizeRelativePath(request.relativePath());
-        String ignoreReason = ignoreReason(relativePath);
+        String ignoreReason = ignoreReason(relativePath, projectSettings);
         if (ignoreReason != null) {
             throw new CustomException(ErrorCode.UNSUPPORTED_FILE);
         }
         ProjectFile current = fileId == null ? fileRepository
                 .findByProject_IdAndRelativePath(projectId, relativePath).orElse(null)
                 : requireFile(projectId, fileId);
-        PermissionPolicy policy = current == null ? settings(projectId).getCreatePolicy()
-                : settings(projectId).getEditPolicy();
+        PermissionPolicy policy = current == null ? projectSettings.getCreatePolicy()
+                : projectSettings.getEditPolicy();
         requirePermission(policy, request.approved());
         if (current != null && !current.getRelativePath().equals(relativePath)) {
             throw new CustomException(ErrorCode.INVALID_REQUEST);
@@ -239,9 +242,10 @@ public class ProjectFileService {
     @Transactional
     public ProjectFileResponse move(String projectId, String fileId, FileMoveRequest request) {
         ProjectFile file = requireFile(projectId, fileId);
-        requirePermission(settings(projectId).getMovePolicy(), request.approved());
+        ProjectSettings projectSettings = settings(projectId);
+        requirePermission(projectSettings.getMovePolicy(), request.approved());
         String destination = storageService.normalizeRelativePath(request.destinationPath());
-        if (ignoreReason(destination) != null || fileRepository
+        if (ignoreReason(destination, projectSettings) != null || fileRepository
                 .findByProject_IdAndRelativePath(projectId, destination).isPresent()) {
             throw new CustomException(ErrorCode.INVALID_REQUEST);
         }
@@ -378,7 +382,7 @@ public class ProjectFileService {
     private Set<String> validateProjectedLimits(List<MultipartFile> files, List<String> paths,
                                                 Map<String, ProjectFile> existing,
                                                 boolean fullSync, boolean scopedSync,
-                                                List<String> scopes) {
+                                                List<String> scopes, ProjectSettings settings) {
         Set<String> accepted = new HashSet<>();
         Set<String> seen = new HashSet<>();
         long projectedBytes = existing.values().stream().mapToLong(ProjectFile::getSizeBytes).sum();
@@ -389,7 +393,7 @@ public class ProjectFileService {
                 throw new CustomException(ErrorCode.INVALID_REQUEST);
             }
             if (scopedSync && !inScopes(path, scopes)) continue;
-            if (ignoreReason(path) != null) {
+            if (ignoreReason(path, settings) != null) {
                 continue;
             }
             accepted.add(path);
@@ -441,7 +445,7 @@ public class ProjectFileService {
         return scopes.stream().anyMatch(scope -> path.equals(scope) || path.startsWith(scope + "/"));
     }
 
-    private String ignoreReason(String relativePath) {
+    private String ignoreReason(String relativePath, ProjectSettings settings) {
         String lowercase = relativePath.toLowerCase(Locale.ROOT);
         String name = fileName(lowercase);
         if (SENSITIVE_NAMES.contains(name) || name.endsWith(".pem") || name.endsWith(".key")
@@ -453,12 +457,46 @@ public class ProjectFileService {
                 return "제외 디렉터리";
             }
         }
+        for (String pattern : settings.getExcludedPathPatterns()) {
+            if (matchesGlob(lowercase, pattern.toLowerCase(Locale.ROOT))) {
+                return "사용자 제외 경로 규칙: " + pattern;
+            }
+        }
+        int dot = name.lastIndexOf('.');
+        String extension = dot < 0 ? "" : name.substring(dot + 1);
+        if (!extension.isBlank() && settings.getExcludedExtensions().contains(extension)) {
+            return "사용자 제외 확장자: ." + extension;
+        }
         try {
             describe(relativePath);
             return null;
         } catch (CustomException exception) {
             return "지원하지 않는 바이너리 또는 파일 형식";
         }
+    }
+
+    private boolean matchesGlob(String path, String glob) {
+        if (!glob.contains("*") && !glob.contains("?")) {
+            return path.equals(glob) || path.startsWith(glob + "/");
+        }
+        StringBuilder regex = new StringBuilder("^");
+        for (int index = 0; index < glob.length(); index++) {
+            char value = glob.charAt(index);
+            if (value == '*') {
+                if (index + 1 < glob.length() && glob.charAt(index + 1) == '*') {
+                    regex.append(".*");
+                    index++;
+                } else {
+                    regex.append("[^/]*");
+                }
+            } else if (value == '?') {
+                regex.append("[^/]");
+            } else {
+                regex.append(Pattern.quote(String.valueOf(value)));
+            }
+        }
+        regex.append('$');
+        return path.matches(regex.toString());
     }
 
     private FileDescriptor describe(String relativePath) {

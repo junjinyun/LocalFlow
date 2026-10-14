@@ -2,6 +2,8 @@ package com.localflow.domain.project.entity;
 
 import com.localflow.domain.agent.domain.ExecutionMode;
 import jakarta.persistence.Column;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -11,6 +13,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -38,6 +42,16 @@ public class ProjectSettings {
     @Enumerated(EnumType.STRING) private PermissionPolicy deletePolicy;
     @Enumerated(EnumType.STRING) private PermissionPolicy executePolicy;
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "project_setting_excluded_paths", joinColumns = @JoinColumn(name = "setting_id"))
+    @Column(name = "path_pattern", length = 200, nullable = false)
+    private Set<String> excludedPathPatterns = new LinkedHashSet<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "project_setting_excluded_extensions", joinColumns = @JoinColumn(name = "setting_id"))
+    @Column(name = "extension", length = 20, nullable = false)
+    private Set<String> excludedExtensions = new LinkedHashSet<>();
+
     @Column(nullable = false)
     private Instant updatedAt;
 
@@ -63,7 +77,8 @@ public class ProjectSettings {
     public void update(ExecutionMode executionMode, PrivacyMode privacyMode,
                        PermissionPolicy readPolicy, PermissionPolicy createPolicy,
                        PermissionPolicy editPolicy, PermissionPolicy movePolicy,
-                       PermissionPolicy deletePolicy, PermissionPolicy executePolicy) {
+                       PermissionPolicy deletePolicy, PermissionPolicy executePolicy,
+                       Set<String> excludedPathPatterns, Set<String> excludedExtensions) {
         this.executionMode = executionMode;
         this.privacyMode = privacyMode;
         this.readPolicy = readPolicy;
@@ -72,6 +87,10 @@ public class ProjectSettings {
         this.movePolicy = movePolicy;
         this.deletePolicy = deletePolicy;
         this.executePolicy = executePolicy;
+        this.excludedPathPatterns.clear();
+        this.excludedPathPatterns.addAll(excludedPathPatterns);
+        this.excludedExtensions.clear();
+        this.excludedExtensions.addAll(excludedExtensions);
         this.updatedAt = Instant.now();
     }
 
@@ -84,5 +103,7 @@ public class ProjectSettings {
     public PermissionPolicy getMovePolicy() { return movePolicy; }
     public PermissionPolicy getDeletePolicy() { return deletePolicy; }
     public PermissionPolicy getExecutePolicy() { return executePolicy; }
+    public Set<String> getExcludedPathPatterns() { return Set.copyOf(excludedPathPatterns); }
+    public Set<String> getExcludedExtensions() { return Set.copyOf(excludedExtensions); }
     public Instant getUpdatedAt() { return updatedAt; }
 }

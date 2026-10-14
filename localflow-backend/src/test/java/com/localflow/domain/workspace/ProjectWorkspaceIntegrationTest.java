@@ -3,13 +3,18 @@ package com.localflow.domain.workspace;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.localflow.domain.project.dto.request.ProjectCreateRequest;
+import com.localflow.domain.project.dto.request.ProjectSettingsUpdateRequest;
 import com.localflow.domain.project.dto.response.ProjectResponse;
+import com.localflow.domain.project.entity.PermissionPolicy;
+import com.localflow.domain.project.entity.PrivacyMode;
 import com.localflow.domain.project.service.ProjectService;
+import com.localflow.domain.agent.domain.ExecutionMode;
 import com.localflow.domain.workspace.dto.FileContentResponse;
 import com.localflow.domain.workspace.dto.FileSyncResponse;
 import com.localflow.domain.workspace.service.ProjectFileService;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -108,6 +113,31 @@ class ProjectWorkspaceIntegrationTest {
         assertThat(result.scopePaths()).containsExactly("src/a");
         assertThat(fileService.findAll(project.id())).extracting("relativePath")
                 .containsExactly("src/a/A.java", "src/b/B.java");
+    }
+
+    @Test
+    void appliesProjectPathAndExtensionExclusionsBeforeStorageAndIndexing() {
+        ProjectResponse project = projectService.create(new ProjectCreateRequest("excluded", "test"));
+        projectService.updateSettings(project.id(), new ProjectSettingsUpdateRequest(
+                ExecutionMode.BALANCED, PrivacyMode.LOCAL_ONLY,
+                PermissionPolicy.ALLOW, PermissionPolicy.CONFIRM, PermissionPolicy.CONFIRM,
+                PermissionPolicy.CONFIRM, PermissionPolicy.CONFIRM, PermissionPolicy.DENY,
+                Set.of("generated/**"), Set.of(".log")));
+
+        FileSyncResponse result = fileService.synchronize(project.id(),
+                List.of(textFile("Main.java", "class Main {}"),
+                        textFile("Generated.java", "class Generated {}"),
+                        textFile("debug.log", "trace")),
+                List.of("excluded/src/Main.java", "excluded/generated/Generated.java",
+                        "excluded/logs/debug.log"), true, null);
+
+        assertThat(result.added()).isEqualTo(1);
+        assertThat(result.ignored()).isEqualTo(2);
+        assertThat(result.changes()).extracting("reason")
+                .anyMatch(reason -> reason != null && reason.toString().contains("사용자 제외 경로"))
+                .anyMatch(reason -> reason != null && reason.toString().contains("사용자 제외 확장자"));
+        assertThat(fileService.findAll(project.id())).extracting("relativePath")
+                .containsExactly("src/Main.java");
     }
 
     private MockMultipartFile textFile(String name, String content) {

@@ -18,12 +18,17 @@ import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
 import com.localflow.domain.agent.repository.AgentRunRepository;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional(readOnly = true)
 public class ProjectService {
+    private static final Pattern EXTENSION_PATTERN = Pattern.compile("[a-z0-9][a-z0-9._+-]{0,19}");
     private final ProjectRepository projectRepository;
     private final ProjectSettingsRepository settingsRepository;
     private final WorkspaceStorageService storageService;
@@ -86,7 +91,9 @@ public class ProjectService {
                 .orElseThrow(() -> new CustomException(ErrorCode.PROJECT_SETTINGS_NOT_FOUND));
         settings.update(request.executionMode(), request.privacyMode(), request.readPolicy(),
                 request.createPolicy(), request.editPolicy(), request.movePolicy(),
-                request.deletePolicy(), request.executePolicy());
+                request.deletePolicy(), request.executePolicy(),
+                normalizeExcludedPaths(request.excludedPathPatterns()),
+                normalizeExcludedExtensions(request.excludedExtensions()));
         return ProjectSettingsResponse.from(settings);
     }
 
@@ -110,5 +117,38 @@ public class ProjectService {
 
     private String normalize(String value) {
         return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    private Set<String> normalizeExcludedPaths(Set<String> values) {
+        Set<String> normalized = new LinkedHashSet<>();
+        if (values == null) return normalized;
+        for (String value : values) {
+            if (value == null || value.isBlank()) continue;
+            String path = value.strip().replace('\\', '/');
+            if (path.startsWith("/") || path.contains("..") || path.contains(":")
+                    || path.chars().anyMatch(Character::isISOControl)) {
+                throw new CustomException(ErrorCode.INVALID_REQUEST);
+            }
+            while (path.startsWith("./")) path = path.substring(2);
+            while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
+            if (path.isBlank()) throw new CustomException(ErrorCode.INVALID_REQUEST);
+            normalized.add(path);
+        }
+        return normalized;
+    }
+
+    private Set<String> normalizeExcludedExtensions(Set<String> values) {
+        Set<String> normalized = new LinkedHashSet<>();
+        if (values == null) return normalized;
+        for (String value : values) {
+            if (value == null || value.isBlank()) continue;
+            String extension = value.strip().toLowerCase(Locale.ROOT);
+            while (extension.startsWith(".")) extension = extension.substring(1);
+            if (!EXTENSION_PATTERN.matcher(extension).matches()) {
+                throw new CustomException(ErrorCode.INVALID_REQUEST);
+            }
+            normalized.add(extension);
+        }
+        return normalized;
     }
 }

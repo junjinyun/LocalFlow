@@ -5,7 +5,7 @@ import {
   Tags,
 } from 'lucide-react'
 import { api } from '../api'
-import type { FileContent, FileSyncResult, Project, ProjectFile } from '../types'
+import type { FileContent, FileSyncResult, Project, ProjectFile, ProjectSettings } from '../types'
 import Modal from './Modal'
 
 type Props = {
@@ -18,6 +18,7 @@ type SelectionStats = {
   selected: number
   accepted: number
   ignoredDirectories: number
+  customExcluded: number
   unsupported: number
   oversized: number
 }
@@ -55,6 +56,23 @@ const supportedExtensions = new Set([
   'hwp', 'hwpx', 'rtf',
 ])
 const sensitiveNames = new Set(['.env', '.env.local', '.env.production', 'id_rsa', 'id_ed25519'])
+
+const matchesGlob = (path: string, glob: string) => {
+  const normalizedPath = path.toLowerCase()
+  const normalizedGlob = glob.toLowerCase().replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '')
+  if (!normalizedGlob.includes('*') && !normalizedGlob.includes('?')) {
+    return normalizedPath === normalizedGlob || normalizedPath.startsWith(`${normalizedGlob}/`)
+  }
+  let regex = '^'
+  for (let index = 0; index < normalizedGlob.length; index++) {
+    const value = normalizedGlob[index]
+    if (value === '*' && normalizedGlob[index + 1] === '*') { regex += '.*'; index++ }
+    else if (value === '*') regex += '[^/]*'
+    else if (value === '?') regex += '[^/]'
+    else regex += value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+  return new RegExp(`${regex}$`).test(normalizedPath)
+}
 
 const formatBytes = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`
@@ -209,6 +227,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
   const [saving, setSaving] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [selectionStats, setSelectionStats] = useState<SelectionStats | null>(null)
+  const [projectSettings, setProjectSettings] = useState<ProjectSettings | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [syncElapsed, setSyncElapsed] = useState(0)
@@ -287,6 +306,8 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
     setSearch('')
     setExpandedDirectories(new Set())
     loadFiles(false)
+    api.projects.settings(project.id).then(setProjectSettings)
+      .catch(error => notify(error instanceof Error ? error.message : '분석 제외 설정을 불러오지 못했습니다.', 'error'))
   }, [project.id])
 
   useEffect(() => {
@@ -382,6 +403,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
     const selectedFiles = Array.from(event.target.files ?? [])
     const accepted: File[] = []
     let ignoredDirectoryCount = 0
+    let customExcludedCount = 0
     let unsupportedCount = 0
     let oversizedCount = 0
 
@@ -389,6 +411,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
       const relativePath = (file.webkitRelativePath || file.name).replaceAll('\\', '/')
       const segments = relativePath.toLowerCase().split('/')
       const fileName = segments.at(-1) ?? ''
+      const projectRelativePath = segments.length > 1 ? segments.slice(1).join('/') : segments.join('/')
       if (segments.some(segment => ignoredDirectories.has(segment))) {
         ignoredDirectoryCount++
         continue
@@ -400,6 +423,11 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
       }
       const dot = fileName.lastIndexOf('.')
       const extension = dot < 0 ? '' : fileName.slice(dot + 1)
+      if (projectSettings && (projectSettings.excludedExtensions.includes(extension)
+        || projectSettings.excludedPathPatterns.some(pattern => matchesGlob(projectRelativePath, pattern)))) {
+        customExcludedCount++
+        continue
+      }
       if (extension && !supportedExtensions.has(extension)) {
         unsupportedCount++
         continue
@@ -415,6 +443,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
       selected: selectedFiles.length,
       accepted: accepted.length,
       ignoredDirectories: ignoredDirectoryCount,
+      customExcluded: customExcludedCount,
       unsupported: unsupportedCount,
       oversized: oversizedCount,
     }
@@ -613,7 +642,7 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
         {pendingFiles.length > 0 && (
           <div className="sync-box">
             <strong>{pendingFiles.length}개 파일 준비됨</strong>
-            {selectionStats && selectionStats.selected !== selectionStats.accepted && <small className="selection-filter-summary">전체 {selectionStats.selected.toLocaleString()}개 중 폴더 제외 {selectionStats.ignoredDirectories.toLocaleString()} · 형식/민감 파일 제외 {selectionStats.unsupported.toLocaleString()} · 대용량 제외 {selectionStats.oversized.toLocaleString()}</small>}
+            {selectionStats && selectionStats.selected !== selectionStats.accepted && <small className="selection-filter-summary">전체 {selectionStats.selected.toLocaleString()}개 중 폴더 제외 {selectionStats.ignoredDirectories.toLocaleString()} · 사용자 규칙 제외 {selectionStats.customExcluded.toLocaleString()} · 형식/민감 파일 제외 {selectionStats.unsupported.toLocaleString()} · 대용량 제외 {selectionStats.oversized.toLocaleString()}</small>}
             <div className="sync-mode-selector"><button className={syncMode === 'FULL' ? 'active' : ''} onClick={() => setSyncMode('FULL')}>전체 동기화</button><button className={syncMode === 'SELECTED' ? 'active' : ''} onClick={() => setSyncMode('SELECTED')}>선택 범위</button></div>
             <label className="check-row"><input type="checkbox" checked={fullSync} onChange={event => setFullSync(event.target.checked)} />{syncMode === 'SELECTED' ? '선택 범위의 누락 파일 삭제' : '누락 파일 삭제'}</label>
             <label className="check-row"><input type="checkbox" checked={forceReindex} onChange={event => setForceReindex(event.target.checked)} />동일 파일도 다시 분석</label>
