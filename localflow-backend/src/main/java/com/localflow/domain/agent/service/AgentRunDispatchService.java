@@ -10,6 +10,7 @@ import com.localflow.global.error.ErrorCode;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
 
 @Service
 public class AgentRunDispatchService {
@@ -26,7 +27,8 @@ public class AgentRunDispatchService {
     }
 
     @Transactional
-    public AgentRunResponse enqueue(String projectId, String runId, boolean approved) {
+    public AgentRunResponse enqueue(String projectId, String runId, boolean approved,
+                                    List<String> selectedOperationIds) {
         AgentRun run = runService.requireRunForUpdate(projectId, runId);
         AgentRunStatus previousStatus = run.getStatus();
         if (previousStatus != AgentRunStatus.DRAFT
@@ -44,7 +46,11 @@ public class AgentRunDispatchService {
         run.queue();
         runRepository.saveAndFlush(run);
         eventPublisher.publishEvent(new AgentRunQueuedEvent(
-                projectId, runId, approved, approvalResume));
+                projectId, runId, approved, approvalResume, selectedOperationIds));
         return AgentRunResponse.from(run);
+    }
+
+    public AgentRunResponse enqueue(String projectId, String runId, boolean approved) {
+        return enqueue(projectId, runId, approved, null);
     }
 }

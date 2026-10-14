@@ -18,6 +18,6 @@ public class AgentRunQueuedListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(AgentRunQueuedEvent event) {
         executionService.processQueued(event.projectId(), event.runId(),
-                event.approved(), event.approvalResume());
+                event.approved(), event.approvalResume(), event.selectedOperationIds());
     }
 }

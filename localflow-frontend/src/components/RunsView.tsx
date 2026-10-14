@@ -16,6 +16,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
   const [selectedRun, setSelectedRun] = useState<AgentRun | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [progress, setProgress] = useState<AgentRunProgress[]>([])
+  const [selectedOperationIds, setSelectedOperationIds] = useState<string[]>([])
 
   const load = async () => {
     setLoading(true)
@@ -82,10 +83,10 @@ export default function RunsView({ project, notify }: { project: Project; notify
     }
   }
 
-  const execute = async (runId: string, approved: boolean) => {
+  const execute = async (runId: string, approved: boolean, operationIds?: string[]) => {
     setWorkingId(runId)
     try {
-      const queued = await api.runs.execute(project.id, runId, approved)
+      const queued = await api.runs.execute(project.id, runId, approved, operationIds)
       storeRun(queued)
       setSelectedRun(queued)
       setProgress(await api.runs.progress(project.id, runId))
@@ -125,6 +126,15 @@ export default function RunsView({ project, notify }: { project: Project; notify
     if (!run.planJson) return null
     try { return JSON.parse(run.planJson) as AgentPlan } catch { return null }
   }
+
+  useEffect(() => {
+    if (!selectedRun || selectedRun.status !== 'WAITING_APPROVAL') {
+      setSelectedOperationIds([])
+      return
+    }
+    const plan = planOf(selectedRun)
+    setSelectedOperationIds(plan?.operations.map(operation => operation.id) ?? [])
+  }, [selectedRun?.runId, selectedRun?.status, selectedRun?.planJson])
 
   const decisionOf = (run: AgentRun): AgentDecision | null => {
     if (!run.decisionJson) return null
@@ -261,6 +271,10 @@ export default function RunsView({ project, notify }: { project: Project; notify
 
           <section className="run-detail-section">
             <h3>파일 변경 <span>{changes.length}</span></h3>
+            {selectedRun.status === 'WAITING_APPROVAL' && plan && plan.operations.length > 0 && <div className="operation-selection-toolbar">
+              <label><input type="checkbox" checked={selectedOperationIds.length === plan.operations.length} onChange={event => setSelectedOperationIds(event.target.checked ? plan.operations.map(operation => operation.id) : [])} /> 전체 선택</label>
+              <span>{selectedOperationIds.length} / {plan.operations.length}개 적용</span>
+            </div>}
             {recordedChanges == null && changes.length > 0 && <p className="run-snapshot-notice">이전 형식의 실행 기록입니다. 변경 계획은 확인할 수 있지만 변경 전 본문은 저장되어 있지 않을 수 있습니다.</p>}
             {changes.length === 0 ? <p className="run-detail-empty">변경된 파일이 없습니다.</p> : (
               <ul className="run-operation-list">
@@ -268,6 +282,15 @@ export default function RunsView({ project, notify }: { project: Project; notify
                   <li key={`${change.path}-${index}`}>
                     <details>
                       <summary>
+                        {selectedRun.status === 'WAITING_APPROVAL' && change.operationId && <input
+                          type="checkbox"
+                          checked={selectedOperationIds.includes(change.operationId)}
+                          onClick={event => event.stopPropagation()}
+                          onChange={event => setSelectedOperationIds(current => event.target.checked
+                            ? [...current, change.operationId!]
+                            : current.filter(id => id !== change.operationId))}
+                          aria-label={`${change.path} 변경 선택`}
+                        />}
                         <b className={change.action.toLowerCase()}>{change.action}</b>
                         <code>{change.path}</code>
                         {change.destinationPath && <span>→ {change.destinationPath}</span>}
@@ -335,7 +358,7 @@ export default function RunsView({ project, notify }: { project: Project; notify
 
           <div className="run-detail-actions">
             {selectedRun.status === 'DRAFT' && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => execute(selectedRun.runId, false)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}실행</button>}
-            {selectedRun.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => execute(selectedRun.runId, true)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{selectedRun.planJson ? '승인 및 적용' : '승인하고 계속'}</button>}
+            {selectedRun.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === selectedRun.runId || Boolean(selectedRun.planJson && selectedOperationIds.length === 0)} onClick={() => execute(selectedRun.runId, true, selectedRun.planJson ? selectedOperationIds : undefined)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{selectedRun.planJson ? `선택 ${selectedOperationIds.length}개 승인 및 적용` : '승인하고 계속'}</button>}
             {selectedRun.status === 'FAILED' && selectedRun.errorRetryable === true && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => retry(selectedRun.runId)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}다시 실행</button>}
             {cancellableStatuses.has(selectedRun.status) && <button className="secondary-button danger-text" disabled={workingId === selectedRun.runId} onClick={() => cancel(selectedRun.runId)}><Ban size={15} />취소</button>}
           </div>

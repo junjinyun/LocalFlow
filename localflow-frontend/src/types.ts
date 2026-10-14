@@ -80,12 +80,14 @@ export type Provider = {
 }
 
 export type FileOperation = {
+  id: string
   action: 'CREATE' | 'UPDATE' | 'MOVE' | 'DELETE'
   path: string
   destinationPath: string | null
   content: string | null
 }
 export type AgentFileChangeSnapshot = {
+  operationId: string | null
   action: FileOperation['action']
   path: string
   destinationPath: string | null

@@ -29,8 +29,12 @@ public class AgentPlanParser {
             JsonNode operationNodes = root.path("operations");
             if (!operationNodes.isArray()) throw invalidPlan();
             if (operationNodes.size() > properties.maxOperations()) throw invalidPlan();
+            int operationIndex = 0;
             for (JsonNode node : operationNodes) {
                 FileOperationAction action = FileOperationAction.valueOf(required(node, "action").toUpperCase());
+                String id = optional(node, "id");
+                if (id == null || id.isBlank()) id = "op-" + (++operationIndex);
+                else operationIndex++;
                 String path = required(node, "path");
                 String destination = optional(node, "destinationPath");
                 String content = optional(node, "content");
@@ -41,7 +45,7 @@ public class AgentPlanParser {
                         && content == null) {
                     throw invalidPlan();
                 }
-                operations.add(new FileOperationPlan(action, path, destination, content));
+                operations.add(new FileOperationPlan(id, action, path, destination, content));
             }
             return new AgentPlan(root.path("summary").asText("AI 작업 계획"),
                     root.path("response").asText("작업 계획을 생성했습니다."), operations);
