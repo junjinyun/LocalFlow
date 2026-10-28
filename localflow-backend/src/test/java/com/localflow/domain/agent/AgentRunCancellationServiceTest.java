@@ -80,6 +80,31 @@ class AgentRunCancellationServiceTest {
                                 .isEqualTo(ErrorCode.INVALID_RUN_STATUS));
     }
 
+    @Test
+    void repeatedCancellationRequestIsIdempotent() {
+        AgentRun run = draft();
+        run.queue();
+        run.startDeciding();
+        run.requestCancellation();
+        stubRun(run);
+
+        var response = service.request(project.getId(), run.getId());
+
+        assertThat(response.status()).isEqualTo(AgentRunStatus.CANCEL_REQUESTED);
+    }
+
+    @Test
+    void alreadyCancelledRunReturnsItsCurrentState() {
+        AgentRun run = draft();
+        run.queue();
+        run.cancel();
+        stubRun(run);
+
+        var response = service.request(project.getId(), run.getId());
+
+        assertThat(response.status()).isEqualTo(AgentRunStatus.CANCELLED);
+    }
+
     private AgentRun draft() {
         return AgentRun.draft(project, "작업을 수행해줘", ExecutionMode.BALANCED,
                 AiProviderType.OLLAMA, "qwen2.5-coder:3b");
