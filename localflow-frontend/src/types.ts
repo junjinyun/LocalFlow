@@ -87,6 +87,8 @@ export type MemoryCandidate = {
   title: string; content: string; globalScope: boolean; scopeTags: string[]
   scopeFilePatterns: string[]; scopeTaskTypes: string[]; possibleDuplicateMemoryId: string | null
   possibleDuplicateTitle: string | null; approvedMemoryId: string | null
+  relationType: 'DUPLICATE' | 'CONFLICT' | null; relatedMemoryId: string | null
+  relatedCandidateId: string | null; relatedTitle: string | null
   createdAt: string; reviewedAt: string | null
 }
 

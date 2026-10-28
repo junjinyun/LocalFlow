@@ -2,6 +2,7 @@ package com.localflow.domain.memory.entity;
 
 import com.localflow.domain.memory.domain.MemoryCandidateSourceType;
 import com.localflow.domain.memory.domain.MemoryCandidateStatus;
+import com.localflow.domain.memory.domain.MemoryCandidateRelationType;
 import com.localflow.domain.memory.domain.MemoryType;
 import com.localflow.domain.project.entity.Project;
 import jakarta.persistence.CollectionTable;
@@ -85,6 +86,16 @@ public class ProjectMemoryCandidate {
     @Column(length = 36)
     private String possibleDuplicateMemoryId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private MemoryCandidateRelationType relationType;
+
+    @Column(length = 36)
+    private String relatedMemoryId;
+
+    @Column(length = 36)
+    private String relatedCandidateId;
+
     @Column(length = 36)
     private String approvedMemoryId;
 
@@ -136,6 +147,16 @@ public class ProjectMemoryCandidate {
         this.reviewedAt = Instant.now();
     }
 
+    public void markRelation(MemoryCandidateRelationType relationType,
+                             String relatedMemoryId, String relatedCandidateId) {
+        this.relationType = relationType;
+        this.relatedMemoryId = relatedMemoryId;
+        this.relatedCandidateId = relatedCandidateId;
+        if (relationType == MemoryCandidateRelationType.DUPLICATE && relatedMemoryId != null) {
+            this.possibleDuplicateMemoryId = relatedMemoryId;
+        }
+    }
+
     private void requirePending() {
         if (status != MemoryCandidateStatus.PENDING) {
             throw new IllegalStateException("이미 검토된 프로젝트 기억 후보입니다.");
@@ -157,6 +178,9 @@ public class ProjectMemoryCandidate {
     public Set<String> getScopeFilePatterns() { return Set.copyOf(scopeFilePatterns); }
     public Set<String> getScopeTaskTypes() { return Set.copyOf(scopeTaskTypes); }
     public String getPossibleDuplicateMemoryId() { return possibleDuplicateMemoryId; }
+    public MemoryCandidateRelationType getRelationType() { return relationType; }
+    public String getRelatedMemoryId() { return relatedMemoryId; }
+    public String getRelatedCandidateId() { return relatedCandidateId; }
     public String getApprovedMemoryId() { return approvedMemoryId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getReviewedAt() { return reviewedAt; }

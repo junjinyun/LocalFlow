@@ -13,12 +13,14 @@ import com.localflow.domain.chat.entity.ChatMessage;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.memory.domain.MemoryCandidateSourceType;
 import com.localflow.domain.memory.domain.MemoryCandidateStatus;
+import com.localflow.domain.memory.domain.MemoryCandidateRelationType;
 import com.localflow.domain.memory.domain.MemoryType;
 import com.localflow.domain.memory.dto.MemoryCandidateApproveRequest;
 import com.localflow.domain.memory.dto.MemoryCandidateResponse;
 import com.localflow.domain.memory.dto.ProjectMemoryCreateRequest;
 import com.localflow.domain.memory.dto.ProjectMemoryResponse;
 import com.localflow.domain.memory.entity.ProjectMemoryCandidate;
+import com.localflow.domain.memory.entity.ProjectMemory;
 import com.localflow.domain.memory.repository.ProjectMemoryCandidateRepository;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
 import com.localflow.domain.memory.service.ProjectMemoryCandidateService;
@@ -95,5 +97,52 @@ class ProjectMemoryCandidateServiceTest {
         assertThat(candidate.getStatus()).isEqualTo(MemoryCandidateStatus.APPROVED);
         assertThat(candidate.getApprovedMemoryId()).isEqualTo("memory-id");
         verify(memoryService).create(any(), any(ProjectMemoryCreateRequest.class));
+    }
+
+    @Test
+    void marksDuplicateAmongPendingCandidatesFromDifferentMessages() {
+        when(projectService.requireProject(project.getId())).thenReturn(project);
+        ChatMessage first = ChatMessage.create(project, ChatMessageType.PROMPT,
+                "앞으로 모든 API 응답은 ApiResponse 형식을 항상 사용한다.");
+        ChatMessage second = ChatMessage.create(project, ChatMessageType.NOTE,
+                "앞으로 모든 API 응답은 ApiResponse 형식을 항상 사용한다.");
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of(first, second));
+        when(runRepository.findAllByProject_IdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of());
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(candidateRepository.findAllByProject_IdAndStatusOrderByCreatedAtDesc(
+                project.getId(), MemoryCandidateStatus.PENDING)).thenReturn(List.of());
+        when(candidateRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<MemoryCandidateResponse> result = service.extract(project.getId());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(1).relationType()).isEqualTo(MemoryCandidateRelationType.DUPLICATE);
+        assertThat(result.get(1).relatedCandidateId()).isEqualTo(result.get(0).id());
+    }
+
+    @Test
+    void marksRuleThatConflictsWithActiveMemory() {
+        when(projectService.requireProject(project.getId())).thenReturn(project);
+        ProjectMemory activeRule = ProjectMemory.create(project, MemoryType.PROJECT_RULE,
+                "JWT 인증 규칙", "항상 JWT 인증을 사용한다.");
+        ChatMessage message = ChatMessage.create(project, ChatMessageType.PROMPT,
+                "앞으로 JWT 인증을 사용하지 마.");
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of(message));
+        when(runRepository.findAllByProject_IdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of());
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of(activeRule));
+        when(candidateRepository.findAllByProject_IdAndStatusOrderByCreatedAtDesc(
+                project.getId(), MemoryCandidateStatus.PENDING)).thenReturn(List.of());
+        when(memoryRepository.findById(activeRule.getId())).thenReturn(Optional.of(activeRule));
+        when(candidateRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MemoryCandidateResponse result = service.extract(project.getId()).get(0);
+
+        assertThat(result.relationType()).isEqualTo(MemoryCandidateRelationType.CONFLICT);
+        assertThat(result.relatedMemoryId()).isEqualTo(activeRule.getId());
+        assertThat(result.relatedTitle()).isEqualTo(activeRule.getTitle());
     }
 }
