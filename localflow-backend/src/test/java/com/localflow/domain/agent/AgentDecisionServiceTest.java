@@ -64,6 +64,47 @@ class AgentDecisionServiceTest {
         assertThat(result.actionType()).isEqualTo("MODIFY_FILES");
     }
 
+    @Test
+    void explicitNoModificationConstraintWinsOverCreationKeywords() {
+        AgentDecisionService service = new AgentDecisionService(List.of(), decomposer, retryExecutor);
+
+        DecisionResult result = service.decide(
+                "로그인 화면 추가 방법을 분석하되 파일은 수정하지 마",
+                List.of(file("src/Auth.java", "authentication")), false, decomposition());
+
+        assertThat(result.actionType()).isEqualTo("INSPECT_FILES");
+        assertThat(result.riskLevel()).isEqualTo("LOW");
+        assertThat(result.needsHumanApproval()).isFalse();
+    }
+
+    @Test
+    void explicitNoModificationConstraintOverridesJevMutationDecision() {
+        DecisionProvider provider = providerReturning(new DecisionResult(
+                "CREATE_FILES", "src/Auth.java", List.of("authentication"),
+                List.of(new TaskScope("인증 수정", List.of("authentication"))),
+                "MEDIUM", true, "jev", "{}"));
+        AgentDecisionService service = new AgentDecisionService(List.of(provider), decomposer, retryExecutor);
+
+        DecisionResult result = service.decide("인증 수정 방법만 설명하고 코드 변경 없이 진행해줘",
+                List.of(file("src/Auth.java", "authentication")), true, decomposition());
+
+        assertThat(result.actionType()).isEqualTo("INSPECT_FILES");
+        assertThat(result.needsHumanApproval()).isFalse();
+    }
+
+    @Test
+    void summaryAndDesignOnlyRequestsAreClassifiedAsInspection() {
+        AgentDecisionService service = new AgentDecisionService(List.of(), decomposer, retryExecutor);
+
+        DecisionResult summary = service.decide("현재 JWT 흐름을 세 문장으로 요약해줘",
+                List.of(file("src/Auth.java", "authentication")), false, decomposition());
+        DecisionResult design = service.decide("로컬 로그인 추가 방법을 설계만 해줘",
+                List.of(file("src/Auth.java", "authentication")), false, decomposition());
+
+        assertThat(summary.actionType()).isEqualTo("INSPECT_FILES");
+        assertThat(design.actionType()).isEqualTo("INSPECT_FILES");
+    }
+
     private DecisionProvider providerReturning(DecisionResult result) {
         DecisionProvider provider = mock(DecisionProvider.class);
         when(provider.providerType()).thenReturn(AiProviderType.JEV);
