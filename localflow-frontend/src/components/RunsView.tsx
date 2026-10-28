@@ -56,7 +56,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
         setProgress(events)
         if (pollingStatuses.has(updated.status)) {
           timer = window.setTimeout(poll, 1000)
-        } else if (updated.status === 'COMPLETED') {
+        } else if (updated.status === 'COMPLETED' || updated.status === 'PARTIALLY_COMPLETED') {
           notify('AI 작업을 완료했습니다.')
         } else if (updated.status === 'WAITING_APPROVAL') {
           notify('파일 작업 전 승인이 필요합니다.')
@@ -312,7 +312,9 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
       beforeContent: null,
       afterContent: operation.content,
     })) ?? [])
-    const fullResponse = selectedRun.errorMessage || plan?.response || selectedRun.resultMessage || selectedRun.notice
+    const fullResponse = selectedRun.errorMessage
+      || (selectedRun.status === 'PARTIALLY_COMPLETED' ? selectedRun.resultMessage : null)
+      || plan?.response || selectedRun.resultMessage || selectedRun.notice
 
     return (
       <section className="content-panel panel run-detail-page">
@@ -355,6 +357,11 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
                 <span className={`task-status ${task.status.toLowerCase()}`}>{task.status}</span>
                 <div><strong>{task.order}. {task.instruction}</strong>
                   {task.dependsOn.length > 0 && <small>선행 작업: {task.dependsOn.join(', ')}</small>}
+                  {(task.durationMillis != null || task.generationAttempts != null) && <small>
+                    {task.durationMillis != null ? `${(task.durationMillis / 1000).toFixed(1)}초` : ''}
+                    {task.durationMillis != null && task.generationAttempts != null ? ' · ' : ''}
+                    {task.generationAttempts != null ? `AI 응답 ${task.generationAttempts}회` : ''}
+                  </small>}
                   {task.resultMessage && <p>{task.resultMessage}</p>}
                   {task.errorMessage && <p className="run-error">{task.errorMessage}</p>}
                 </div>
@@ -423,7 +430,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
             </details>)}</div>
           </section>}
 
-          {selectedRun.status === 'COMPLETED' && <section className="run-detail-section validation-section">
+          {(selectedRun.status === 'COMPLETED' || selectedRun.status === 'PARTIALLY_COMPLETED') && <section className="run-detail-section validation-section">
             <div className="validation-heading">
               <div><h3>코드 검증 <span>{validationResults.length}</span></h3><p>프로젝트에서 감지된 제한된 빌드·테스트 명령만 승인 후 실행합니다.</p></div>
               <button className="secondary-button" disabled={validationLoading} onClick={loadValidationPreview}>
@@ -548,6 +555,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
             const usage = usageOf(run.usageSummaryJson)
             const summary = run.resultSummary || (
               run.status === 'COMPLETED' ? 'AI 작업이 완료되었습니다. 상세 화면에서 결과를 확인할 수 있습니다.'
+                : run.status === 'PARTIALLY_COMPLETED' ? '완료된 결과는 보존되었으며, 작업별 성공·실패 내역을 상세 화면에서 확인할 수 있습니다.'
                 : run.status === 'WAITING_APPROVAL' ? '파일 변경 계획이 준비되어 승인을 기다리고 있습니다.'
                   : run.status === 'CANCEL_REQUESTED' ? '취소 요청을 처리하고 AI 결과를 폐기하는 중입니다.'
                     : run.status === 'CANCELLED' ? '사용자가 실행을 취소했습니다.'

@@ -3,6 +3,7 @@ package com.localflow.domain.agent.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.localflow.domain.agent.domain.AgentFileChangeSnapshot;
 import com.localflow.domain.agent.domain.AgentInputSnapshot;
+import com.localflow.domain.agent.domain.AgentInspectionResult;
 import com.localflow.domain.agent.domain.AgentInputSnapshot.InputBudget;
 import com.localflow.domain.agent.domain.AgentProgressStage;
 import com.localflow.domain.agent.domain.AgentPlan;
@@ -31,6 +32,7 @@ import com.localflow.domain.provider.domain.GenerationRequest;
 import com.localflow.domain.provider.domain.GenerationResult;
 import com.localflow.domain.provider.port.GenerationProvider;
 import com.localflow.domain.provider.exception.ProviderCallException;
+import com.localflow.domain.provider.exception.StructuredOutputException;
 import com.localflow.domain.provider.service.SensitiveDataMasker;
 import com.localflow.domain.provider.service.OllamaGenerationProvider;
 import com.localflow.domain.provider.service.OllamaLocalPolicy;
@@ -64,6 +66,7 @@ public class AgentExecutionService {
     private final AgentContextBudgetPolicy contextBudgetPolicy;
     private final AiUsageCostService usageCostService;
     private final AgentPlanParser planParser;
+    private final AgentInspectionResultParser inspectionResultParser;
     private final TaskDecompositionParser decompositionParser;
     private final TaskDependencyPlanner taskDependencyPlanner;
     private final AgentOutputSchemas outputSchemas;
@@ -87,6 +90,7 @@ public class AgentExecutionService {
                                  AgentContextBudgetPolicy contextBudgetPolicy,
                                  AiUsageCostService usageCostService,
                                  AgentPlanParser planParser,
+                                 AgentInspectionResultParser inspectionResultParser,
                                  TaskDecompositionParser decompositionParser,
                                  TaskDependencyPlanner taskDependencyPlanner,
                                  AgentOutputSchemas outputSchemas,
@@ -109,6 +113,7 @@ public class AgentExecutionService {
         this.contextBudgetPolicy = contextBudgetPolicy;
         this.usageCostService = usageCostService;
         this.planParser = planParser;
+        this.inspectionResultParser = inspectionResultParser;
         this.decompositionParser = decompositionParser;
         this.taskDependencyPlanner = taskDependencyPlanner;
         this.outputSchemas = outputSchemas;
@@ -237,12 +242,15 @@ public class AgentExecutionService {
                     run.getProject(), run.getPrompt(), decision, includeContents,
                     contextBudget.maxContextChars());
             cancellationService.checkpoint(projectId, runId);
-            String systemPrompt = systemPrompt();
+            boolean inspection = isInspection(decision);
+            String systemPrompt = inspection ? inspectionSystemPrompt() : systemPrompt();
             String userPrompt = userPrompt(run.getPrompt(), decomposition.value(), decision,
                     contextSnapshot.content());
             GenerationRequest generationRequest = new GenerationRequest(
-                    systemPrompt, userPrompt, selectedModel, outputSchemas.filePlan());
-            GenerationRequest preparedRequest = generationRequest.withSchemaInstruction("파일 변경 계획");
+                    systemPrompt, userPrompt, selectedModel,
+                    inspection ? outputSchemas.inspectionResult() : outputSchemas.filePlan());
+            String responseName = inspection ? "파일 분석 결과" : "파일 변경 계획";
+            GenerationRequest preparedRequest = generationRequest.withSchemaInstruction(responseName);
             contextBudgetPolicy.validateRequest(contextBudget,
                     preparedRequest.systemPrompt(), preparedRequest.userPrompt());
             run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
@@ -257,8 +265,7 @@ public class AgentExecutionService {
             appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
             ParsedGeneration<AgentPlan> planGeneration = withProviderRetry(
                     projectId, run, AgentProgressStage.PLANNING,
-                    () -> structuredGenerationService.generate(
-                            provider, generationRequest, planParser::parse, "파일 변경 계획"));
+                    () -> generateAgentPlan(provider, generationRequest, inspection, responseName));
             cancellationService.checkpoint(projectId, runId);
             GenerationResult generation = planGeneration.generation();
             AgentPlan plan = ReadOnlyRequestPolicy.enforce(
@@ -288,6 +295,16 @@ public class AgentExecutionService {
                 progressService.append(projectId, runId, AgentProgressStage.WAITING_APPROVAL,
                         "변경 계획이 준비되어 사용자 승인을 기다리고 있습니다.");
                 runRepository.saveAndFlush(run);
+                return;
+            }
+
+            if (plan.operations().isEmpty()) {
+                run.complete(decisionJson, planJson, plan.response(), generation.model(),
+                        inputTokens, outputTokens);
+                runRepository.saveAndFlush(run);
+                addSystemMessage(run, plan.response());
+                progressService.append(projectId, runId, AgentProgressStage.COMPLETED,
+                        "파일을 변경하지 않고 분석 결과를 정리했습니다.");
                 return;
             }
 
@@ -506,12 +523,15 @@ public class AgentExecutionService {
                 AgentContextService.ContextSnapshot contextSnapshot = contextService.buildSnapshot(
                         run.getProject(), task.instruction(), decision, includeContents,
                         contextBudget.maxContextChars());
-                String systemPrompt = systemPrompt();
+                boolean inspection = isInspection(decision);
+                String systemPrompt = inspection ? inspectionSystemPrompt() : systemPrompt();
                 String taskPrompt = userPrompt(task.instruction(), singleTask, decision,
                         contextSnapshot.content());
                 GenerationRequest request = new GenerationRequest(
-                        systemPrompt, taskPrompt, selectedModel, outputSchemas.filePlan());
-                GenerationRequest prepared = request.withSchemaInstruction("파일 변경 계획");
+                        systemPrompt, taskPrompt, selectedModel,
+                        inspection ? outputSchemas.inspectionResult() : outputSchemas.filePlan());
+                String responseName = inspection ? "파일 분석 결과" : "파일 변경 계획";
+                GenerationRequest prepared = request.withSchemaInstruction(responseName);
                 contextBudgetPolicy.validateRequest(contextBudget,
                         prepared.systemPrompt(), prepared.userPrompt());
                 run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
@@ -526,8 +546,10 @@ public class AgentExecutionService {
                 appendOllamaWaitProgress(projectId, runId, provider, AgentProgressStage.PLANNING);
                 ParsedGeneration<AgentPlan> generated = withProviderRetry(
                         projectId, run, AgentProgressStage.PLANNING,
-                        () -> structuredGenerationService.generate(
-                                provider, request, planParser::parse, "파일 변경 계획"));
+                        () -> generateAgentPlan(provider, request, inspection, responseName));
+                running = running.withGenerationAttempts(generated.attempts());
+                executions.set(index, running);
+                saveTaskExecutions(run, executions);
                 AgentPlan plan = ReadOnlyRequestPolicy.enforce(
                         run.getPrompt(), decision.actionType(), generated.value());
                 validatePolicies(settings, plan);
@@ -556,13 +578,15 @@ public class AgentExecutionService {
                     return;
                 }
 
-                run.startRunning(changesJson);
-                runRepository.saveAndFlush(run);
-                progressService.append(projectId, runId, AgentProgressStage.APPLYING,
-                        "작업 " + (index + 1) + "/" + executions.size() + "의 파일 변경을 적용하는 중입니다.");
-                var applyResult = fileChangeTransactionService.apply(projectId, plan,
-                        () -> cancellationService.checkpoint(projectId, runId));
-                run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
+                if (!plan.operations().isEmpty()) {
+                    run.startRunning(changesJson);
+                    runRepository.saveAndFlush(run);
+                    progressService.append(projectId, runId, AgentProgressStage.APPLYING,
+                            "작업 " + (index + 1) + "/" + executions.size() + "의 파일 변경을 적용하는 중입니다.");
+                    var applyResult = fileChangeTransactionService.apply(projectId, plan,
+                            () -> cancellationService.checkpoint(projectId, runId));
+                    run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
+                }
                 AgentTaskExecution completed = running.withStatus(AgentTaskStatus.COMPLETED,
                         planJson, changesJson, plan.response(), null);
                 executions.set(index, completed);
@@ -580,6 +604,9 @@ public class AgentExecutionService {
                 saveTaskExecutions(run, executions);
             } catch (Exception exception) {
                 anyFailed = true;
+                if (exception instanceof StructuredOutputException structured) {
+                    running = running.withGenerationAttempts(structured.attempts());
+                }
                 AgentTaskExecution failed = running.withStatus(AgentTaskStatus.FAILED,
                         taskPlanJson, taskChangesJson, null, safeMessage(exception));
                 executions.set(index, failed);
@@ -600,14 +627,32 @@ public class AgentExecutionService {
         AgentPlan combined = new AgentPlan(decomposition.summary(),
                 results.isEmpty() ? "분해된 작업 실행을 완료했습니다." : String.join("\n\n", results),
                 combinedOperations);
+        String combinedJson = planParser.toJson(combined);
         if (anyFailed || executions.stream().anyMatch(value -> value.status() == AgentTaskStatus.FAILED)) {
-            run.fail("일부 작업 단위가 실패했습니다. 실행 상세에서 작업별 결과를 확인해 주세요.");
+            long completedCount = executions.stream()
+                    .filter(value -> value.status() == AgentTaskStatus.COMPLETED).count();
+            long failedCount = executions.stream()
+                    .filter(value -> value.status() == AgentTaskStatus.FAILED).count();
+            long skippedCount = executions.stream()
+                    .filter(value -> value.status() == AgentTaskStatus.SKIPPED).count();
+            if (completedCount == 0) {
+                run.fail("모든 작업 단위를 완료하지 못했습니다. 실행 상세에서 작업별 오류를 확인해 주세요.");
+            } else {
+                String partialMessage = "총 " + executions.size() + "개 작업 중 " + completedCount
+                        + "개를 완료했습니다. 실패 " + failedCount + "개, 건너뜀 "
+                        + skippedCount + "개입니다.\n\n" + combined.response();
+                run.completePartially(run.getDecisionJson(), combinedJson, partialMessage,
+                        selectedModel, inputTokens, outputTokens);
+                addSystemMessage(run, partialMessage);
+            }
             runRepository.saveAndFlush(run);
-            progressService.append(projectId, runId, AgentProgressStage.FAILED,
-                    "독립 작업은 계속 처리했지만 일부 작업 단위를 완료하지 못했습니다.");
+            progressService.append(projectId, runId,
+                    completedCount == 0 ? AgentProgressStage.FAILED : AgentProgressStage.COMPLETED,
+                    completedCount == 0
+                            ? "모든 작업 단위가 실패했습니다."
+                            : "독립 작업은 계속 처리했으며 완료된 결과를 보존했습니다.");
             return;
         }
-        String combinedJson = planParser.toJson(combined);
         run.complete(run.getDecisionJson(), combinedJson, combined.response(), selectedModel,
                 inputTokens, outputTokens);
         runRepository.saveAndFlush(run);
@@ -627,7 +672,8 @@ public class AgentExecutionService {
         for (int index = 0; index < orderedTasks.size(); index++) {
             DecomposedTask task = orderedTasks.get(index);
             created.add(new AgentTaskExecution(task.id(), task.instruction(), task.dependsOn(),
-                    index + 1, AgentTaskStatus.PENDING, null, null, null, null));
+                    index + 1, AgentTaskStatus.PENDING, null, null, null, null,
+                    null, null, null, null));
         }
         saveTaskExecutions(run, created);
         return created;
@@ -800,6 +846,25 @@ public class AgentExecutionService {
                 "[AI 실행 완료] " + message));
     }
 
+    private boolean isInspection(DecisionResult decision) {
+        return "INSPECT_FILES".equals(decision.actionType())
+                || "ANSWER_ONLY".equals(decision.actionType());
+    }
+
+    private ParsedGeneration<AgentPlan> generateAgentPlan(GenerationProvider provider,
+                                                           GenerationRequest request,
+                                                           boolean inspection,
+                                                           String responseName) {
+        if (!inspection) {
+            return structuredGenerationService.generate(
+                    provider, request, planParser::parse, responseName);
+        }
+        ParsedGeneration<AgentInspectionResult> generated = structuredGenerationService.generate(
+                provider, request, inspectionResultParser::parse, responseName);
+        return new ParsedGeneration<>(generated.value().toPlan(), generated.generation(),
+                generated.attempts());
+    }
+
     private String systemPrompt() {
         return """
                 당신은 업로드된 프로젝트 사본을 수정하는 개발 보조 에이전트다.
@@ -811,6 +876,17 @@ public class AgentExecutionService {
                 판단 결과에 작업 단위가 여러 개 있으면 순서를 유지하고 모든 작업 단위를 빠짐없이 반영한다.
                 AI 작업 분해 결과는 후보이며 판단 결과 taskScopes에 없는 후보 작업은 수행하지 않는다.
                 절대경로와 상위 디렉터리(..) 경로는 사용하지 않는다.
+                """;
+    }
+
+    private String inspectionSystemPrompt() {
+        return """
+                당신은 업로드된 프로젝트 사본을 읽고 근거를 찾는 개발 분석 에이전트다.
+                전달된 파일 분석 결과 JSON Schema와 일치하는 JSON 객체 하나만 반환하라.
+                마크다운 코드 펜스, 설명문, 스키마에 없는 필드는 사용하지 마라.
+                summary는 요청에 대한 결론을, response는 사용자가 읽을 상세 분석을 담는다.
+                findings에는 파일명, 코드 역할, 호출 관계 등 프로젝트에서 확인한 구체적 근거를 넣는다.
+                파일 생성·수정·이동·삭제 계획은 작성하지 말고 제공된 내용만 근거로 사용한다.
                 """;
     }
 

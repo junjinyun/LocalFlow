@@ -297,6 +297,13 @@ public class AgentRun {
         touch();
     }
 
+    public void completePartially(String decisionJson, String planJson, String message,
+                                  String model, Integer inputTokens, Integer outputTokens) {
+        complete(decisionJson, planJson, message, model, inputTokens, outputTokens);
+        this.status = AgentRunStatus.PARTIALLY_COMPLETED;
+        touch();
+    }
+
     public void fail(String message) {
         this.errorMessage = message == null ? "알 수 없는 실행 오류" : message;
         this.providerErrorCode = null;

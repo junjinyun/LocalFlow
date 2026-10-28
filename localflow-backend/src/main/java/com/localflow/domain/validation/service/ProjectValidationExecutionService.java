@@ -57,7 +57,8 @@ public class ProjectValidationExecutionService {
     public ValidationCommandResult execute(String projectId, String runId, String commandId) {
         if (!properties.enabled()) throw new CustomException(ErrorCode.VALIDATION_EXECUTION_DISABLED);
         AgentRun run = runService.requireRun(projectId, runId);
-        if (run.getStatus() != AgentRunStatus.COMPLETED) {
+        if (run.getStatus() != AgentRunStatus.COMPLETED
+                && run.getStatus() != AgentRunStatus.PARTIALLY_COMPLETED) {
             throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
         }
         ValidationCommandSpec spec = discoveryService.discover(projectId).stream()

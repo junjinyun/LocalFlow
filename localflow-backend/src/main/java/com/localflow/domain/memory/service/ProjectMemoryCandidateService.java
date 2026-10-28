@@ -81,7 +81,9 @@ public class ProjectMemoryCandidateService {
             }
         }
         for (AgentRun run : runRepository.findAllByProject_IdOrderByCreatedAtDesc(projectId)) {
-            if (run.getStatus() == AgentRunStatus.COMPLETED && run.getResultMessage() != null) {
+            if ((run.getStatus() == AgentRunStatus.COMPLETED
+                    || run.getStatus() == AgentRunStatus.PARTIALLY_COMPLETED)
+                    && run.getResultMessage() != null) {
                 created.addAll(extractFrom(project, MemoryCandidateSourceType.AGENT_RUN,
                         run.getId(), run.getResultMessage(), memories));
             }

@@ -71,6 +71,7 @@ public record AgentRunResponse(
             case WAITING_APPROVAL -> "파일 작업 적용 전에 사용자 승인을 기다리고 있습니다.";
             case CANCEL_REQUESTED -> "취소 요청을 확인하고 실행 결과를 폐기하는 중입니다.";
             case COMPLETED -> "AI 작업이 완료되었습니다.";
+            case PARTIALLY_COMPLETED -> "완료된 작업 결과와 완료하지 못한 항목이 함께 있습니다.";
             case FAILED -> "AI 작업이 실패했습니다.";
             case CANCELLED -> "사용자가 실행을 취소했습니다.";
             case RECOVERY_REQUIRED -> "일부 파일을 자동 복구하지 못했습니다. 수동 확인이 필요합니다.";

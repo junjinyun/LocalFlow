@@ -37,4 +37,13 @@ class AgentOutputSchemasTest {
         assertThat(operation.path("required")).extracting(JsonNode::asText)
                 .containsExactly("id", "action", "path", "destinationPath", "content");
     }
+
+    @Test
+    void inspectionSchemaDoesNotRequireFileOperations() {
+        JsonNode schema = schemas.inspectionResult();
+
+        assertThat(schema.path("required")).extracting(JsonNode::asText)
+                .containsExactly("summary", "response", "findings");
+        assertThat(schema.path("properties").has("operations")).isFalse();
+    }
 }
