@@ -48,6 +48,13 @@ public class AgentRunCancellationService {
         cancellationSignals.add(runId);
         AgentRun run = requireForUpdate(projectId, runId);
         AgentRunStatus previousStatus = run.getStatus();
+        if (previousStatus == AgentRunStatus.CANCEL_REQUESTED) {
+            return AgentRunResponse.from(run);
+        }
+        if (previousStatus == AgentRunStatus.CANCELLED) {
+            cancellationSignals.remove(runId);
+            return AgentRunResponse.from(run);
+        }
         if (!CANCELLABLE.contains(previousStatus)) {
             cancellationSignals.remove(runId);
             throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
