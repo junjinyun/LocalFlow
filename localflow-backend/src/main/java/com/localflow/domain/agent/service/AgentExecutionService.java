@@ -136,7 +136,8 @@ public class AgentExecutionService {
             progressService.append(projectId, runId, AgentProgressStage.PREPARING,
                     "요청을 확인하고 실행 환경을 준비하는 중입니다.");
             if (approvalResume && run.getPlanJson() != null && run.getTaskExecutionsJson() == null) {
-                AgentPlan originalPlan = planParser.parse(run.getPlanJson());
+                AgentPlan originalPlan = ReadOnlyRequestPolicy.enforce(
+                        run.getPrompt(), storedActionType(run), planParser.parse(run.getPlanJson()));
                 AgentPlan storedPlan = AgentPlanSelection.select(originalPlan, selectedOperationIds);
                 cancellationService.checkpoint(projectId, runId);
                 progressService.append(projectId, runId, AgentProgressStage.APPLYING,
@@ -260,7 +261,8 @@ public class AgentExecutionService {
                             provider, generationRequest, planParser::parse, "파일 변경 계획"));
             cancellationService.checkpoint(projectId, runId);
             GenerationResult generation = planGeneration.generation();
-            AgentPlan plan = planGeneration.value();
+            AgentPlan plan = ReadOnlyRequestPolicy.enforce(
+                    run.getPrompt(), decision.actionType(), planGeneration.value());
             if (planGeneration.attempts() > 1) {
                 progressService.append(projectId, runId, AgentProgressStage.PLANNING,
                         "파일 변경 계획의 구조화 응답을 재시도하여 정상 형식으로 복구했습니다.");
@@ -376,7 +378,8 @@ public class AgentExecutionService {
                     projectId, run, AgentProgressStage.PLANNING,
                     () -> structuredGenerationService.generate(
                             provider, request, planParser::parse, "수정된 파일 변경 계획"));
-            AgentPlan revisedPlan = generated.value();
+            AgentPlan revisedPlan = ReadOnlyRequestPolicy.enforce(
+                    combinedPrompt, decision.actionType(), generated.value());
             validatePolicies(settings, revisedPlan);
             String revisedPlanJson = planParser.toJson(revisedPlan);
             String changesJson = snapshotJson(projectId, revisedPlan);
@@ -439,7 +442,8 @@ public class AgentExecutionService {
                 throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
             }
             AgentPlan approvedPlan = AgentPlanSelection.select(
-                    planParser.parse(run.getPlanJson()), selectedOperationIds);
+                    ReadOnlyRequestPolicy.enforce(run.getPrompt(), storedActionType(run),
+                            planParser.parse(run.getPlanJson())), selectedOperationIds);
             progressService.append(projectId, runId, AgentProgressStage.APPLYING,
                     "승인된 작업 단위의 파일 변경을 적용하는 중입니다.");
             run.startRunning(snapshotJson(projectId, approvedPlan));
@@ -524,7 +528,8 @@ public class AgentExecutionService {
                         projectId, run, AgentProgressStage.PLANNING,
                         () -> structuredGenerationService.generate(
                                 provider, request, planParser::parse, "파일 변경 계획"));
-                AgentPlan plan = generated.value();
+                AgentPlan plan = ReadOnlyRequestPolicy.enforce(
+                        run.getPrompt(), decision.actionType(), generated.value());
                 validatePolicies(settings, plan);
                 String planJson = planParser.toJson(plan);
                 String changesJson = snapshotJson(projectId, plan);
@@ -710,6 +715,15 @@ public class AgentExecutionService {
     private void validatePolicies(ProjectSettings settings, AgentPlan plan) {
         if (plan.operations().stream().anyMatch(operation -> policy(settings, operation.action()) == PermissionPolicy.DENY)) {
             throw new CustomException(ErrorCode.FILE_OPERATION_DENIED);
+        }
+    }
+
+    private String storedActionType(AgentRun run) {
+        if (run.getDecisionJson() == null || run.getDecisionJson().isBlank()) return null;
+        try {
+            return objectMapper.readValue(run.getDecisionJson(), DecisionResult.class).actionType();
+        } catch (Exception ignored) {
+            return null;
         }
     }
 

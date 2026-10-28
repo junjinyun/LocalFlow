@@ -60,7 +60,7 @@ public class AgentDecisionService {
                                     proposedScopes.stream().map(TaskScope::instruction).toList())),
                             checkpoint, retryListener);
                     validate(result, candidateFiles, candidateTags, proposedScopes);
-                    return mergeScopes(result, proposedScopes);
+                    return enforceReadOnly(prompt, mergeScopes(result, proposedScopes));
                 } catch (RuntimeException exception) {
                     ProviderErrorCode code = exception instanceof ProviderCallException provider
                             ? provider.errorCode() : ProviderErrorCode.INVALID_RESPONSE;
@@ -82,7 +82,9 @@ public class AgentDecisionService {
         String action;
         String risk;
         boolean approval;
-        if (containsAny(lower, "삭제", "delete", "remove")) {
+        if (ReadOnlyRequestPolicy.isExplicitlyReadOnly(prompt)) {
+            action = "INSPECT_FILES"; risk = "LOW"; approval = false;
+        } else if (containsAny(lower, "삭제", "delete", "remove")) {
             action = "DELETE_FILES"; risk = "HIGH"; approval = true;
         } else if (containsAny(lower, "이동", "이름 변경", "move", "rename")) {
             action = "MODIFY_FILES"; risk = "MEDIUM"; approval = true;
@@ -90,7 +92,8 @@ public class AgentDecisionService {
             action = "CREATE_FILES"; risk = "MEDIUM"; approval = true;
         } else if (containsAny(lower, "수정", "변경", "고쳐", "fix", "update", "refactor")) {
             action = "MODIFY_FILES"; risk = "MEDIUM"; approval = true;
-        } else if (containsAny(lower, "찾", "확인", "분석", "inspect", "explain", "review")) {
+        } else if (containsAny(lower, "찾", "확인", "분석", "조회", "요약", "목록", "설명", "점검", "추적",
+                "inspect", "explain", "review", "summarize", "list")) {
             action = "INSPECT_FILES"; risk = "LOW"; approval = false;
         } else {
             action = "ANSWER_ONLY"; risk = "LOW"; approval = false;
@@ -100,6 +103,13 @@ public class AgentDecisionService {
         }
         return DecisionResult.fallback(action, bestTarget(lower, files), scopes, risk, approval,
                 fallbackReason, errorCode);
+    }
+
+    private DecisionResult enforceReadOnly(String prompt, DecisionResult result) {
+        if (!ReadOnlyRequestPolicy.isExplicitlyReadOnly(prompt)) return result;
+        return new DecisionResult("INSPECT_FILES", result.targetPath(), result.selectedTags(),
+                result.taskScopes(), "LOW", false, result.model(), result.rawJson(),
+                result.fallbackUsed(), result.fallbackReason(), result.fallbackProviderErrorCode());
     }
 
     private void validate(DecisionResult result, List<String> files, List<String> tags,
