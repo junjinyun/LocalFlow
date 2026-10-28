@@ -162,6 +162,10 @@ export type AgentTaskExecution = {
   changesJson: string | null
   resultMessage: string | null
   errorMessage: string | null
+  startedAt: string | null
+  completedAt: string | null
+  durationMillis: number | null
+  generationAttempts: number | null
 }
 export type AgentPlanRevision = {
   version: number

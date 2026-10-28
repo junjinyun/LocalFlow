@@ -12,10 +12,11 @@ export function saveBrowserNotifications(enabled: boolean) {
   window.localStorage.setItem(SETTING_KEY, String(enabled))
 }
 
-type NotifyStatus = 'COMPLETED' | 'WAITING_APPROVAL' | 'FAILED'
+type NotifyStatus = 'COMPLETED' | 'PARTIALLY_COMPLETED' | 'WAITING_APPROVAL' | 'FAILED'
 
 const notificationCopy: Record<NotifyStatus, { title: string; body: (run: AgentRun) => string }> = {
   COMPLETED: { title: 'LocalFlow 작업 완료', body: run => run.prompt },
+  PARTIALLY_COMPLETED: { title: 'LocalFlow 작업 일부 완료', body: run => run.resultMessage || run.prompt },
   WAITING_APPROVAL: { title: 'LocalFlow 승인 필요', body: run => `${run.prompt}\n파일 변경 계획을 확인해 주세요.` },
   FAILED: { title: 'LocalFlow 작업 실패', body: run => run.errorMessage || run.prompt },
 }
@@ -65,7 +66,8 @@ export function useAgentNotifications(project: Project | null, enabled: boolean,
             if (current.has(runId) || oldRun.status === 'WAITING_APPROVAL') continue
             const finished = await api.runs.get(project.id, runId)
             if (disposed) return
-            if (finished.status === 'COMPLETED' || finished.status === 'FAILED') emit(finished, finished.status)
+            if (finished.status === 'COMPLETED' || finished.status === 'PARTIALLY_COMPLETED'
+              || finished.status === 'FAILED') emit(finished, finished.status)
           }
           previous.current = current
         }

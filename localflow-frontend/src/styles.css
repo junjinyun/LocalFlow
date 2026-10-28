@@ -282,6 +282,7 @@ body.resizing-file-panel { cursor: col-resize; user-select: none; }
 .run-status.cancel_requested { color: #8b6a3f; background: #f6eddc; }
 .run-status.recovery_required { color: #98524b; background: #f8e8e6; }
 .run-status.completed { color: #4f714b; background: #e7f1e4; }
+.run-status.partially_completed { color: #7a6228; background: #f6edcf; }
 .run-status.failed { color: #98524b; background: #f8e8e6; }
 .run-status.waiting_approval { color: #7a6228; background: #f6edcf; }
 .run-actions { padding: 16px 12px 16px 0; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 7px; }

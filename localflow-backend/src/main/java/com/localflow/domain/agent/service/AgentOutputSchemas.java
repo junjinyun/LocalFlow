@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 public class AgentOutputSchemas {
     private final JsonNode taskDecomposition;
     private final JsonNode filePlan;
+    private final JsonNode inspectionResult;
 
     public AgentOutputSchemas(ObjectMapper objectMapper, AiProviderProperties properties) {
         this.taskDecomposition = parse(objectMapper, """
@@ -66,6 +67,18 @@ public class AgentOutputSchemas {
         ((ObjectNode) plan.path("properties").path("operations"))
                 .put("maxItems", properties.maxOperations());
         this.filePlan = plan;
+        this.inspectionResult = parse(objectMapper, """
+                {
+                  "type":"object",
+                  "additionalProperties":false,
+                  "required":["summary","response","findings"],
+                  "properties":{
+                    "summary":{"type":"string","minLength":1},
+                    "response":{"type":"string","minLength":1},
+                    "findings":{"type":"array","items":{"type":"string","minLength":1}}
+                  }
+                }
+                """);
     }
 
     public JsonNode taskDecomposition() {
@@ -74,6 +87,10 @@ public class AgentOutputSchemas {
 
     public JsonNode filePlan() {
         return filePlan.deepCopy();
+    }
+
+    public JsonNode inspectionResult() {
+        return inspectionResult.deepCopy();
     }
 
     private JsonNode parse(ObjectMapper objectMapper, String value) {

@@ -112,7 +112,7 @@ export default function ChatView({ project, providers, notify }: Props) {
         const notificationKey = `${run.runId}:${run.status}`
         if (notifiedRunRef.current !== notificationKey) {
           notifiedRunRef.current = notificationKey
-          if (run.status === 'COMPLETED') {
+          if (run.status === 'COMPLETED' || run.status === 'PARTIALLY_COMPLETED') {
             const history = await api.chat.list(project.id)
             if (!disposed) {
               setMessages(history)
@@ -250,7 +250,7 @@ export default function ChatView({ project, providers, notify }: Props) {
           {activeProgress.length > 0 && <article className="message-card agent-activity-card">
             <span className="message-avatar"><Bot size={16} /></span>
             <div>
-              <header><strong>AI 에이전트</strong><span className={`agent-activity-status ${activeRunStatus?.toLowerCase() ?? ''}`}>{activeRunStatus === 'CANCEL_REQUESTED' ? '취소 중' : pollingStatuses.has(activeRunStatus ?? '') ? '작업 중' : activeRunStatus === 'WAITING_APPROVAL' ? '승인 대기' : activeRunStatus === 'FAILED' ? '실패' : activeRunStatus === 'CANCELLED' ? '취소됨' : activeRunStatus === 'COMPLETED' ? '완료' : '진행 기록'}</span></header>
+              <header><strong>AI 에이전트</strong><span className={`agent-activity-status ${activeRunStatus?.toLowerCase() ?? ''}`}>{activeRunStatus === 'CANCEL_REQUESTED' ? '취소 중' : pollingStatuses.has(activeRunStatus ?? '') ? '작업 중' : activeRunStatus === 'WAITING_APPROVAL' ? '승인 대기' : activeRunStatus === 'FAILED' ? '실패' : activeRunStatus === 'CANCELLED' ? '취소됨' : activeRunStatus === 'PARTIALLY_COMPLETED' ? '일부 완료' : activeRunStatus === 'COMPLETED' ? '완료' : '진행 기록'}</span></header>
               <AgentProgressTimeline events={activeProgress} active={pollingStatuses.has(activeRunStatus ?? '')} />
             </div>
           </article>}
