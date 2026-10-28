@@ -63,6 +63,35 @@ public class TaskDecompositionParser {
         return new TaskDecomposition("로컬 규칙 기반 작업 분해", "LOCAL_FALLBACK", tasks);
     }
 
+    public TaskDecomposition preserveConditionalBranches(String prompt,
+                                                          TaskDecomposition decomposition,
+                                                          List<String> availableTags) {
+        if (!isConditional(prompt)) return decomposition;
+        String instructions = decomposition.tasks().stream()
+                .map(DecomposedTask::instruction).reduce("", (left, right) -> left + " " + right);
+        if (preservesMarkers(prompt, instructions)) return decomposition;
+        DecomposedTask guarded = new DecomposedTask("task-conditional", prompt.strip(), List.of(),
+                localDecomposer.tagsFor(prompt, availableTags),
+                List.of("현재 프로젝트에서 조건을 확인한 후 해당하는 분기만 수행한다."));
+        return new TaskDecomposition("조건부 요청 분기 보존", "CONDITION_GUARD",
+                List.of(guarded));
+    }
+
+    private boolean isConditional(String value) {
+        String lower = value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
+        return lower.matches(".*(있으면|있다면|없으면|없다면|없을\\s*경우|if\\s+.*(?:else|otherwise)|if\\s+not).*" );
+    }
+
+    private boolean preservesMarkers(String original, String instructions) {
+        String source = original.toLowerCase(java.util.Locale.ROOT);
+        String result = instructions.toLowerCase(java.util.Locale.ROOT);
+        boolean presentPreserved = !source.matches(".*(있으면|있다면).*")
+                || result.matches(".*(있으면|있다면).*" );
+        boolean absentPreserved = !source.matches(".*(없으면|없다면|없을\\s*경우|if\\s+not).*")
+                || result.matches(".*(없으면|없다면|없을\\s*경우|if\\s+not).*" );
+        return presentPreserved && absentPreserved;
+    }
+
     public String toJson(TaskDecomposition decomposition) {
         try {
             return objectMapper.writeValueAsString(decomposition);
