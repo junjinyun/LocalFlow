@@ -387,18 +387,20 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
                   <li key={`${change.path}-${index}`}>
                     <details>
                       <summary>
-                        {selectedRun.status === 'WAITING_APPROVAL' && change.operationId && <input
-                          type="checkbox"
-                          checked={selectedOperationIds.includes(change.operationId)}
-                          onClick={event => event.stopPropagation()}
-                          onChange={event => setSelectedOperationIds(current => event.target.checked
-                            ? [...current, change.operationId!]
-                            : current.filter(id => id !== change.operationId))}
-                          aria-label={`${change.path} 변경 선택`}
-                        />}
-                        <b className={change.action.toLowerCase()}>{change.action}</b>
-                        <code>{change.path}</code>
-                        {change.destinationPath && <span>→ {change.destinationPath}</span>}
+                        <span className="operation-select-slot">{selectedRun.status === 'WAITING_APPROVAL' && change.operationId && <input
+                            type="checkbox"
+                            checked={selectedOperationIds.includes(change.operationId)}
+                            onClick={event => event.stopPropagation()}
+                            onChange={event => setSelectedOperationIds(current => event.target.checked
+                              ? [...current, change.operationId!]
+                              : current.filter(id => id !== change.operationId))}
+                            aria-label={`${change.path} 변경 선택`}
+                          />}</span>
+                        <span className="run-operation-copy">
+                          <b className={change.action.toLowerCase()}>{change.action}</b>
+                          <code title={change.path}>{change.path}</code>
+                          {change.destinationPath && <span title={change.destinationPath}>→ {change.destinationPath}</span>}
+                        </span>
                         <small>변경 내용 보기</small>
                         <ChevronRight size={16} />
                       </summary>
@@ -524,7 +526,10 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
             </div>}
           </section>
 
-          <div className="run-detail-actions">
+          {(selectedRun.status === 'DRAFT'
+            || selectedRun.status === 'WAITING_APPROVAL'
+            || (selectedRun.status === 'FAILED' && selectedRun.errorRetryable === true)
+            || cancellableStatuses.has(selectedRun.status)) && <div className="run-detail-actions">
             {selectedRun.status === 'WAITING_APPROVAL' && selectedRun.planJson && <div className="plan-revision-form">
               <label htmlFor="plan-revision">계획을 적용하기 전에 보완할 내용을 입력하세요.</label>
               <textarea id="plan-revision" value={revisionInstruction} maxLength={4000} onChange={event => setRevisionInstruction(event.target.value)} placeholder="예: 테스트 파일도 함께 추가하고 설정 파일은 수정하지 마세요." />
@@ -534,7 +539,7 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
             {selectedRun.status === 'WAITING_APPROVAL' && <button className="primary-button" disabled={workingId === selectedRun.runId || Boolean(selectedRun.planJson && selectedOperationIds.length === 0)} onClick={() => execute(selectedRun.runId, true, selectedRun.planJson ? selectedOperationIds : undefined)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}{selectedRun.planJson ? `선택 ${selectedOperationIds.length}개 승인 및 적용` : '승인하고 계속'}</button>}
             {selectedRun.status === 'FAILED' && selectedRun.errorRetryable === true && <button className="primary-button" disabled={workingId === selectedRun.runId} onClick={() => retry(selectedRun.runId)}>{workingId === selectedRun.runId ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}다시 실행</button>}
             {cancellableStatuses.has(selectedRun.status) && <button className="secondary-button danger-text" disabled={workingId === selectedRun.runId} onClick={() => cancel(selectedRun.runId)}><Ban size={15} />취소</button>}
-          </div>
+          </div>}
         </div>
       </section>
     )
