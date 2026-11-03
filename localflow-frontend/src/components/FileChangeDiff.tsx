@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffLines } from 'diff'
 import type { ReactNode } from 'react'
 import type { AgentFileChangeSnapshot } from '../types'
@@ -78,10 +78,38 @@ function highlighted(content: string, path: string): ReactNode {
 
 export default function FileChangeDiff({ change }: { change: AgentFileChangeSnapshot }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [activeChange, setActiveChange] = useState(-1)
+  const [pendingChangeKey, setPendingChangeKey] = useState<string | null>(null)
+  const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const before = change.beforeContent ?? ''
   const after = change.afterContent ?? ''
   const rows = useMemo(() => buildDiffRows(before, after), [before, after])
   const blocks = useMemo(() => buildBlocks(rows), [rows])
+  const changeAnchors = useMemo(() => rows.filter((row, index) => row.kind !== 'context'
+    && (index === 0 || rows[index - 1].kind === 'context')), [rows])
+
+  useEffect(() => {
+    if (!pendingChangeKey) return
+    const frame = requestAnimationFrame(() => {
+      rowRefs.current.get(pendingChangeKey)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      setPendingChangeKey(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [expanded, pendingChangeKey])
+
+  const moveToChange = (offset: number) => {
+    if (changeAnchors.length === 0) return
+    const nextIndex = activeChange < 0
+      ? (offset > 0 ? 0 : changeAnchors.length - 1)
+      : (activeChange + offset + changeAnchors.length) % changeAnchors.length
+    const target = changeAnchors[nextIndex]
+    const containingBlock = blocks.find(block => block.rows.some(row => row.key === target.key))
+    if (containingBlock?.type === 'collapsed') {
+      setExpanded(current => new Set(current).add(containingBlock.key))
+    }
+    setActiveChange(nextIndex)
+    setPendingChangeKey(target.key)
+  }
 
   if (change.action === 'MOVE') return <div className="diff-move"><span>{change.path}</span><b>→</b><span>{change.destinationPath || '대상 경로 없음'}</span><p>파일 내용은 유지되고 경로만 변경됩니다.</p></div>
   const beforeAvailable = change.action === 'CREATE' || change.beforeContent != null
@@ -92,16 +120,40 @@ export default function FileChangeDiff({ change }: { change: AgentFileChangeSnap
   const removed = rows.filter(row => row.kind === 'removed').length
   if (added === 0 && removed === 0) return <div className="diff-unavailable">파일 내용의 변화가 없습니다.</div>
 
-  const renderRow = (row: DiffRow) => <div className={`diff-line ${row.kind}`} key={row.key}>
+  const renderRow = (row: DiffRow) => <div
+    className={`diff-line ${row.kind}`}
+    key={row.key}
+    ref={element => {
+      if (element) rowRefs.current.set(row.key, element)
+      else rowRefs.current.delete(row.key)
+    }}
+  >
     <span className="old-line">{row.beforeLine}</span><span className="new-line">{row.afterLine}</span>
     <span className="diff-prefix">{row.kind === 'added' ? '+' : row.kind === 'removed' ? '−' : ' '}</span>
     <code>{highlighted(row.content, change.destinationPath || change.path)}</code>
   </div>
 
   return <div className="file-diff">
-    <div className="diff-toolbar"><strong>{actionLabels[change.action]}</strong><span className="added">+{added}</span><span className="removed">−{removed}</span></div>
-    <div className="diff-scroll">{blocks.map(block => block.type === 'rows' || expanded.has(block.key)
-      ? <div className="diff-block" key={block.key}>{block.rows.map(renderRow)}</div>
-      : <button className="diff-collapsed" key={block.key} onClick={() => setExpanded(current => new Set(current).add(block.key))}>미변경 {block.rows.length}줄 펼치기</button>)}</div>
+    <div className="diff-toolbar">
+      <strong>{actionLabels[change.action]}</strong><span className="added">+{added}</span><span className="removed">−{removed}</span>
+      <span className="diff-position">{activeChange < 0 ? '-' : activeChange + 1} / {changeAnchors.length}</span>
+      <div className="diff-navigation">
+        <button type="button" onClick={() => moveToChange(-1)} aria-label="이전 변경 위치" title="이전 변경 위치">↑</button>
+        <button type="button" onClick={() => moveToChange(1)} aria-label="다음 변경 위치" title="다음 변경 위치">↓</button>
+      </div>
+    </div>
+    <div className="diff-scroll">{blocks.map(block => {
+      if (block.type === 'rows') return <div className="diff-block" key={block.key}>{block.rows.map(renderRow)}</div>
+      const isExpanded = expanded.has(block.key)
+      return <div className="diff-context-block" key={block.key}>
+        <button className="diff-collapsed" type="button" onClick={() => setExpanded(current => {
+          const next = new Set(current)
+          if (isExpanded) next.delete(block.key)
+          else next.add(block.key)
+          return next
+        })}>미변경 {block.rows.length}줄 {isExpanded ? '접기' : '펼치기'}</button>
+        {isExpanded && block.rows.map(renderRow)}
+      </div>
+    })}</div>
   </div>
 }
