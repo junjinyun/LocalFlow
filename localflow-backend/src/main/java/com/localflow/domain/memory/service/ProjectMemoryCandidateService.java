@@ -8,6 +8,7 @@ import com.localflow.domain.chat.entity.ChatMessage;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.memory.domain.MemoryCandidateSourceType;
 import com.localflow.domain.memory.domain.MemoryCandidateStatus;
+import com.localflow.domain.memory.domain.MemoryCandidateRelationType;
 import com.localflow.domain.memory.domain.MemoryType;
 import com.localflow.domain.memory.dto.MemoryCandidateApproveRequest;
 import com.localflow.domain.memory.dto.MemoryCandidateResponse;
@@ -72,12 +73,15 @@ public class ProjectMemoryCandidateService {
         Project project = projectService.requireProject(projectId);
         List<ProjectMemory> memories = memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(projectId);
         List<ProjectMemoryCandidate> created = new ArrayList<>();
+        List<ProjectMemoryCandidate> knownCandidates = new ArrayList<>(
+                candidateRepository.findAllByProject_IdAndStatusOrderByCreatedAtDesc(
+                        projectId, MemoryCandidateStatus.PENDING));
 
         for (ChatMessage message : chatRepository.findAllByProject_IdOrderByCreatedAtAsc(projectId)) {
             if (message.getType() == ChatMessageType.PROMPT || message.getType() == ChatMessageType.NOTE
                     || message.getType() == ChatMessageType.HANDOFF) {
                 created.addAll(extractFrom(project, MemoryCandidateSourceType.CHAT_MESSAGE,
-                        message.getId(), message.getContent(), memories));
+                        message.getId(), message.getContent(), memories, knownCandidates));
             }
         }
         for (AgentRun run : runRepository.findAllByProject_IdOrderByCreatedAtDesc(projectId)) {
@@ -85,7 +89,7 @@ public class ProjectMemoryCandidateService {
                     || run.getStatus() == AgentRunStatus.PARTIALLY_COMPLETED)
                     && run.getResultMessage() != null) {
                 created.addAll(extractFrom(project, MemoryCandidateSourceType.AGENT_RUN,
-                        run.getId(), run.getResultMessage(), memories));
+                        run.getId(), run.getResultMessage(), memories, knownCandidates));
             }
         }
         return candidateRepository.saveAll(created).stream().map(this::response).toList();
@@ -113,7 +117,8 @@ public class ProjectMemoryCandidateService {
 
     private List<ProjectMemoryCandidate> extractFrom(Project project, MemoryCandidateSourceType sourceType,
                                                      String sourceId, String content,
-                                                     List<ProjectMemory> memories) {
+                                                     List<ProjectMemory> memories,
+                                                     List<ProjectMemoryCandidate> knownCandidates) {
         List<ProjectMemoryCandidate> candidates = new ArrayList<>();
         String[] parts = content.replace("\r", "").split("(?<=[.!?。！？])\\s+|\\n+");
         int candidateOrder = 0;
@@ -127,10 +132,16 @@ public class ProjectMemoryCandidateService {
 
             MemoryType type = inferType(sentence);
             String title = title(sentence, type);
-            String duplicateId = possibleDuplicate(memories, title, sentence)
-                    .map(ProjectMemory::getId).orElse(null);
-            candidates.add(ProjectMemoryCandidate.create(project, sourceType, sourceId, sourceOrder,
-                    excerpt(content), type, title, sentence, true, Set.of(), Set.of(), Set.of(), duplicateId));
+            Relation relation = detectRelation(memories, knownCandidates, title, sentence);
+            String duplicateId = relation.type() == MemoryCandidateRelationType.DUPLICATE
+                    ? relation.memoryId() : null;
+            ProjectMemoryCandidate candidate = ProjectMemoryCandidate.create(project, sourceType, sourceId, sourceOrder,
+                    excerpt(content), type, title, sentence, true, Set.of(), Set.of(), Set.of(), duplicateId);
+            if (relation.type() != null) {
+                candidate.markRelation(relation.type(), relation.memoryId(), relation.candidateId());
+            }
+            candidates.add(candidate);
+            knownCandidates.add(candidate);
         }
         return candidates;
     }
@@ -162,7 +173,81 @@ public class ProjectMemoryCandidateService {
         String duplicateTitle = candidate.getPossibleDuplicateMemoryId() == null ? null
                 : memoryRepository.findById(candidate.getPossibleDuplicateMemoryId())
                 .map(ProjectMemory::getTitle).orElse(null);
-        return MemoryCandidateResponse.from(candidate, duplicateTitle);
+        String relatedTitle = candidate.getRelatedMemoryId() != null
+                ? memoryRepository.findById(candidate.getRelatedMemoryId())
+                .map(ProjectMemory::getTitle).orElse(null)
+                : candidate.getRelatedCandidateId() == null ? null
+                : candidateRepository.findById(candidate.getRelatedCandidateId())
+                .map(ProjectMemoryCandidate::getTitle).orElse(null);
+        return MemoryCandidateResponse.from(candidate, duplicateTitle, relatedTitle);
+    }
+
+    private Relation detectRelation(List<ProjectMemory> memories,
+                                    List<ProjectMemoryCandidate> candidates,
+                                    String title, String content) {
+        Optional<ProjectMemory> duplicateMemory = possibleDuplicate(memories, title, content);
+        if (duplicateMemory.isPresent()) {
+            return new Relation(MemoryCandidateRelationType.DUPLICATE,
+                    duplicateMemory.get().getId(), null);
+        }
+        Optional<ProjectMemoryCandidate> duplicateCandidate = candidates.stream()
+                .filter(candidate -> sameMeaning(candidate.getTitle(), candidate.getContent(), title, content))
+                .findFirst();
+        if (duplicateCandidate.isPresent()) {
+            return new Relation(MemoryCandidateRelationType.DUPLICATE,
+                    null, duplicateCandidate.get().getId());
+        }
+        Optional<ProjectMemory> conflictMemory = memories.stream()
+                .filter(memory -> conflicts(memory.getContent(), content)).findFirst();
+        if (conflictMemory.isPresent()) {
+            return new Relation(MemoryCandidateRelationType.CONFLICT,
+                    conflictMemory.get().getId(), null);
+        }
+        return candidates.stream().filter(candidate -> conflicts(candidate.getContent(), content))
+                .findFirst()
+                .map(candidate -> new Relation(MemoryCandidateRelationType.CONFLICT,
+                        null, candidate.getId()))
+                .orElse(Relation.none());
+    }
+
+    private boolean sameMeaning(String leftTitle, String leftContent,
+                                String rightTitle, String rightContent) {
+        String normalizedLeft = normalize(leftContent);
+        String normalizedRight = normalize(rightContent);
+        return normalize(leftTitle).equals(normalize(rightTitle))
+                || normalizedLeft.equals(normalizedRight)
+                || (Math.min(normalizedLeft.length(), normalizedRight.length()) >= 20
+                && (normalizedLeft.contains(normalizedRight) || normalizedRight.contains(normalizedLeft)));
+    }
+
+    private boolean conflicts(String existing, String proposed) {
+        int leftPolarity = polarity(existing);
+        int rightPolarity = polarity(proposed);
+        if (leftPolarity == 0 || rightPolarity == 0 || leftPolarity == rightPolarity) return false;
+        Set<String> leftTerms = subjectTerms(existing);
+        Set<String> rightTerms = subjectTerms(proposed);
+        return leftTerms.stream().anyMatch(rightTerms::contains);
+    }
+
+    private int polarity(String value) {
+        String normalized = value.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+        if (normalized.matches(".*(하지 마|사용하지|금지|허용하지|비활성|제거한다|must not|do not|never).*")) return -1;
+        if (normalized.matches(".*(항상|해야|사용한다|활성|허용|추가한다|must|always).*")) return 1;
+        return 0;
+    }
+
+    private Set<String> subjectTerms(String value) {
+        Set<String> ignored = Set.of("항상", "사용한다", "사용하지", "해야", "금지",
+                "하지", "마", "must", "not", "always", "never", "do");
+        Set<String> result = new java.util.LinkedHashSet<>();
+        for (String term : value.toLowerCase(Locale.ROOT).split("[^0-9a-z가-힣]+")) {
+            if (term.length() >= 2 && !ignored.contains(term)) result.add(term);
+        }
+        return result;
+    }
+
+    private record Relation(MemoryCandidateRelationType type, String memoryId, String candidateId) {
+        static Relation none() { return new Relation(null, null, null); }
     }
 
     private ProjectMemoryCandidate requireCandidate(String projectId, String candidateId) {

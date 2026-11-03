@@ -85,6 +85,13 @@ export default function MemoryView({ project, notify }: { project: Project; noti
     } catch (error) { notify(error instanceof Error ? error.message : '기억 후보를 거절하지 못했습니다.', 'error') }
   }
 
+  const revealRelated = (candidate: MemoryCandidate) => {
+    const targetId = candidate.relatedMemoryId
+      ? `memory-${candidate.relatedMemoryId}`
+      : candidate.relatedCandidateId ? `memory-candidate-${candidate.relatedCandidateId}` : null
+    if (targetId) document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   const toggle = async (memory: ProjectMemory) => {
     try {
       const updated = await api.memories.update(project.id, { ...memory, active: !memory.active })
@@ -111,8 +118,8 @@ export default function MemoryView({ project, notify }: { project: Project; noti
       </div>
       {candidates.length > 0 && <section className="memory-candidate-section">
         <div className="memory-candidate-heading"><div><h3>검토할 기억 후보 <span>{candidates.length}</span></h3><p>승인하기 전에는 AI 요청에 반영되지 않습니다.</p></div></div>
-        <div className="memory-candidate-list">{candidates.map(candidate => <article className="memory-candidate-card" key={candidate.id}>
-          <div className="memory-candidate-copy"><header><span className={`memory-type ${candidate.type.toLowerCase()}`}>{labels[candidate.type]}</span><span className="candidate-source">{candidate.sourceType === 'CHAT_MESSAGE' ? '대화' : '실행 결과'}</span></header><h4>{candidate.title}</h4><p>{candidate.content}</p>{candidate.possibleDuplicateMemoryId && <div className="duplicate-warning"><AlertTriangle size={14} />기존 기억 ‘{candidate.possibleDuplicateTitle ?? '제목 없음'}’과 중복될 수 있습니다.</div>}<details><summary>원문 맥락</summary><p>{candidate.sourceExcerpt}</p></details></div>
+        <div className="memory-candidate-list">{candidates.map(candidate => <article id={`memory-candidate-${candidate.id}`} className="memory-candidate-card" key={candidate.id}>
+          <div className="memory-candidate-copy"><header><span className={`memory-type ${candidate.type.toLowerCase()}`}>{labels[candidate.type]}</span><span className="candidate-source">{candidate.sourceType === 'CHAT_MESSAGE' ? '대화' : '실행 결과'}</span></header><h4>{candidate.title}</h4><p>{candidate.content}</p>{candidate.relationType && <button type="button" className={`duplicate-warning ${candidate.relationType === 'CONFLICT' ? 'conflict' : ''}`} onClick={() => revealRelated(candidate)}><AlertTriangle size={14} />{candidate.relationType === 'CONFLICT' ? '상반된 규칙' : '중복 후보'} ‘{candidate.relatedTitle ?? '제목 없음'}’ 확인</button>}<details><summary>원문 맥락</summary><p>{candidate.sourceExcerpt}</p></details></div>
           <div className="candidate-actions"><button className="primary-button" onClick={() => openCandidate(candidate)}><CheckCircle2 size={15} />편집 및 승인</button><button className="ghost-button danger" onClick={() => rejectCandidate(candidate)}><XCircle size={15} />거절</button></div>
         </article>)}</div>
       </section>}
@@ -121,7 +128,7 @@ export default function MemoryView({ project, notify }: { project: Project; noti
       ) : (
         <div className="memory-grid">
           {memories.map(memory => (
-            <article className={`memory-card ${memory.active ? '' : 'inactive'}`} key={memory.id}>
+            <article id={`memory-${memory.id}`} className={`memory-card ${memory.active ? '' : 'inactive'}`} key={memory.id}>
               <header><span className={`memory-type ${memory.type.toLowerCase()}`}>{labels[memory.type]}</span><button className="active-toggle" onClick={() => toggle(memory)}>{memory.active ? <CheckCircle2 size={16} /> : <Circle size={16} />}{memory.active ? '활성' : '비활성'}</button></header>
               <h3>{memory.title}</h3><p>{memory.content}</p>
               <div className="memory-scope-summary">{memory.globalScope ? '모든 작업에 적용' : [memory.scopeTags.length ? `태그 ${memory.scopeTags.join(' · ')}` : '', memory.scopeFilePatterns.length ? `파일 ${memory.scopeFilePatterns.join(' · ')}` : '', memory.scopeTaskTypes.length ? `작업 ${memory.scopeTaskTypes.join(' · ')}` : ''].filter(Boolean).join(' / ') || '적용 범위 없음'}</div>
