@@ -129,8 +129,34 @@ class AgentContextServiceTest {
 
         assertThat(first.fileSelections()).isEqualTo(second.fileSelections());
         assertThat(first.fileSelections().get(0).path()).isEqualTo(tagged.getRelativePath());
-        assertThat(first.fileSelections().get(0).score()).isGreaterThan(first.fileSelections().get(1).score());
+        assertThat(first.fileSelections()).extracting(value -> value.path())
+                .doesNotContain(other.getRelativePath());
         assertThat(first.fileSelections().get(0).reasons())
                 .anyMatch(reason -> reason.contains("선택 태그 일치"));
+    }
+
+    @Test
+    void excludesUnrelatedLockFileButIncludesItForDependencyRequest() {
+        Project project = Project.create("sample", null);
+        ProjectFile jwt = ProjectFile.create(project, "src/JwtProvider.java", "JwtProvider.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-jwt");
+        ProjectFile lock = ProjectFile.create(project, "package-lock.json", "package-lock.json",
+                "json", FileCategory.CONFIGURATION, "json", 20, "hash-lock");
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of(jwt, lock));
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of());
+        when(storageService.readText(project.getId(), jwt.getRelativePath())).thenReturn("class JwtProvider {}");
+        when(storageService.readText(project.getId(), lock.getRelativePath())).thenReturn("{}");
+
+        var jwtSnapshot = service.buildSnapshot(project, "JWT 코드를 확인해줘",
+                DecisionResult.fallback("INSPECT_FILES", null, List.of(), "LOW", false), true);
+        var dependencySnapshot = service.buildSnapshot(project, "npm 의존성과 package-lock.json을 확인해줘",
+                DecisionResult.fallback("INSPECT_FILES", null, List.of(), "LOW", false), true);
+
+        assertThat(jwtSnapshot.files()).contains(jwt.getRelativePath()).doesNotContain(lock.getRelativePath());
+        assertThat(dependencySnapshot.files()).contains(lock.getRelativePath());
     }
 }

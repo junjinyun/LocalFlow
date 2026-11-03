@@ -875,6 +875,8 @@ public class AgentExecutionService {
                 제공되지 않은 파일을 추측해서 수정하지 말고, 최소한의 파일만 변경한다.
                 판단 결과에 작업 단위가 여러 개 있으면 순서를 유지하고 모든 작업 단위를 빠짐없이 반영한다.
                 AI 작업 분해 결과는 후보이며 판단 결과 taskScopes에 없는 후보 작업은 수행하지 않는다.
+                프로젝트 기억의 명시적 규칙·출력 지시는 최근 대화보다 우선하여 최종 응답에 반영한다.
+                존재하는 파일을 언급할 때는 전체 인덱스가 아니라 이번 프로젝트 맥락에 본문이 제공된 파일을 우선 근거로 사용한다.
                 절대경로와 상위 디렉터리(..) 경로는 사용하지 않는다.
                 """;
     }
@@ -886,6 +888,8 @@ public class AgentExecutionService {
                 마크다운 코드 펜스, 설명문, 스키마에 없는 필드는 사용하지 마라.
                 summary는 요청에 대한 결론을, response는 사용자가 읽을 상세 분석을 담는다.
                 findings에는 파일명, 코드 역할, 호출 관계 등 프로젝트에서 확인한 구체적 근거를 넣는다.
+                프로젝트 기억의 명시적 규칙·출력 지시는 최근 대화보다 우선하여 최종 응답에 반영한다.
+                파일명을 언급할 때는 본문이 제공된 파일에서 확인한 내용과 전체 파일 인덱스만 근거로 사용하고 경로를 추측하지 마라.
                 파일 생성·수정·이동·삭제 계획은 작성하지 말고 제공된 내용만 근거로 사용한다.
                 """;
     }
@@ -894,8 +898,10 @@ public class AgentExecutionService {
                                            GenerationProvider provider, String selectedModel) {
         if (run.getDecompositionJson() != null && !run.getDecompositionJson().isBlank()) {
             try {
+                TaskDecomposition stored = decompositionParser.parse(run.getDecompositionJson());
                 return new DecompositionOutcome(
-                        decompositionParser.parse(run.getDecompositionJson()), null, 0, null);
+                        decompositionParser.preserveConditionalBranches(
+                                run.getPrompt(), stored, availableTags(files)), null, 0, null);
             } catch (RuntimeException ignored) {
                 // 저장된 이전 결과가 손상된 경우에만 다시 분해한다.
             }
@@ -920,7 +926,10 @@ public class AgentExecutionService {
                             decompositionParser::parse,
                             "작업 분해"));
             generation = parsed.generation();
-            return new DecompositionOutcome(parsed.value(), generation, parsed.attempts(), null);
+            return new DecompositionOutcome(
+                    decompositionParser.preserveConditionalBranches(
+                            run.getPrompt(), parsed.value(), availableTags),
+                    generation, parsed.attempts(), null);
         } catch (RuntimeException exception) {
             return new DecompositionOutcome(
                     decompositionParser.fallback(run.getPrompt(), availableTags),
@@ -936,7 +945,14 @@ public class AgentExecutionService {
                 최대 5개의 독립 작업으로 의미에 따라 분해하고 원래 수행 순서를 유지한다.
                 코드나 파일 본문을 작성하지 말고, 제공된 프로젝트 태그를 우선 사용한다.
                 단순 요청은 작업 하나로 유지한다.
+                '있으면 A, 없으면 B'와 같은 조건부 요청은 조건과 모든 분기를 절대 생략하지 마라.
+                조건 확인과 후속 작업을 분리하려면 후속 작업에 선행 작업 ID를 dependsOn으로 지정한다.
                 """;
+    }
+
+    private List<String> availableTags(List<ProjectFile> files) {
+        return files.stream().flatMap(file -> file.getTags().stream())
+                .distinct().sorted().toList();
     }
 
     private String decompositionUserPrompt(String prompt, String indexContext) {

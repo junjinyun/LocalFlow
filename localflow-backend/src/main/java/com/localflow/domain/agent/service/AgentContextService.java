@@ -28,6 +28,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentContextService {
     private static final int MAX_CONTEXT_FILES = 12;
+    private static final int MIN_CONTEXT_SCORE = 10;
+    private static final Set<String> GENERIC_TERMS = Set.of(
+            "json", "web", "code", "file", "files", "코드", "파일", "확인", "현재", "기능");
     private final ProjectFileRepository fileRepository;
     private final ProjectMemoryRepository memoryRepository;
     private final ChatMessageRepository chatRepository;
@@ -142,15 +145,19 @@ public class AgentContextService {
         List<TaskScope> scopes = decision.taskScopes().isEmpty()
                 ? List.of(new TaskScope(prompt, decision.selectedTags())) : decision.taskScopes();
         return readable.stream().map(file -> rank(file, prompt, decision, scopes))
+                .filter(value -> value.score() >= MIN_CONTEXT_SCORE)
                 .sorted(Comparator.comparingInt(ScoredFile::score).reversed()
                         .thenComparing(value -> value.file().getRelativePath()))
                 .limit(MAX_CONTEXT_FILES).toList();
     }
 
     private ScoredFile rank(ProjectFile file, String prompt, DecisionResult decision, List<TaskScope> scopes) {
-        ScoreDetail best = score(file, tokens(prompt), decision.targetPath(), decision.selectedTags());
+        boolean dependencyRequested = dependencyRequested(prompt);
+        ScoreDetail best = score(file, tokens(prompt), decision.targetPath(), decision.selectedTags(),
+                dependencyRequested);
         for (TaskScope scope : scopes) {
-            ScoreDetail candidate = score(file, tokens(scope.instruction()), decision.targetPath(), scope.tags());
+            ScoreDetail candidate = score(file, tokens(scope.instruction()), decision.targetPath(), scope.tags(),
+                    dependencyRequested || dependencyRequested(scope.instruction()));
             if (candidate.score() > best.score()) best = candidate;
         }
         List<String> reasons = best.reasons().isEmpty()
@@ -159,7 +166,8 @@ public class AgentContextService {
                 new FileSelection(file.getRelativePath(), best.score(), reasons));
     }
 
-    private ScoreDetail score(ProjectFile file, Set<String> terms, String targetPath, List<String> selectedTags) {
+    private ScoreDetail score(ProjectFile file, Set<String> terms, String targetPath,
+                              List<String> selectedTags, boolean dependencyRequested) {
         String path = file.getRelativePath().toLowerCase(Locale.ROOT);
         int score = 0;
         List<String> reasons = new ArrayList<>();
@@ -181,6 +189,15 @@ public class AgentContextService {
             score += 2;
             reasons.add("프로젝트 안내 파일");
         }
+        if (isDependencyLock(path)) {
+            if (dependencyRequested) {
+                score += 50;
+                reasons.add("의존성 확인 요청의 lock 파일");
+            } else if (!file.getRelativePath().equals(targetPath)) {
+                score = 0;
+                reasons = new ArrayList<>();
+            }
+        }
         return new ScoreDetail(score, List.copyOf(reasons));
     }
 
@@ -197,9 +214,19 @@ public class AgentContextService {
     private Set<String> tokens(String prompt) {
         Set<String> result = new HashSet<>();
         for (String value : prompt.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}_.-]+")) {
-            if (value.length() >= 2) result.add(value);
+            if (value.length() >= 2 && !GENERIC_TERMS.contains(value)) result.add(value);
         }
         return result;
+    }
+
+    private boolean dependencyRequested(String prompt) {
+        String lower = prompt == null ? "" : prompt.toLowerCase(Locale.ROOT);
+        return lower.matches(".*(의존성|라이브러리|dependency|dependencies|package|npm|gradle|maven|lock\\s*파일).*" );
+    }
+
+    private boolean isDependencyLock(String path) {
+        return path.endsWith("package-lock.json") || path.endsWith("yarn.lock")
+                || path.endsWith("pnpm-lock.yaml") || path.endsWith("gradle.lockfile");
     }
 
     private String globalMemories(String projectId) {
