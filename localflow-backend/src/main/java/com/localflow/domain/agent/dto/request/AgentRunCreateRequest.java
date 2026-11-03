@@ -14,10 +14,18 @@ public record AgentRunCreateRequest(
         ExecutionMode executionMode,
         AiProviderType preferredGenerationProvider,
         @Size(max = 150, message = "모델명은 150자 이하여야 합니다.")
-        String preferredModel
+        String preferredModel,
+        @Size(max = 36, message = "원본 메시지 ID는 36자 이하여야 합니다.")
+        String sourceMessageId
 ) {
     public AgentRunCreateRequest(String prompt, ExecutionMode executionMode,
                                  AiProviderType preferredGenerationProvider) {
-        this(prompt, executionMode, preferredGenerationProvider, null);
+        this(prompt, executionMode, preferredGenerationProvider, null, null);
+    }
+
+    public AgentRunCreateRequest(String prompt, ExecutionMode executionMode,
+                                 AiProviderType preferredGenerationProvider,
+                                 String preferredModel) {
+        this(prompt, executionMode, preferredGenerationProvider, preferredModel, null);
     }
 }

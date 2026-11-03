@@ -6,6 +6,8 @@ import com.localflow.domain.chat.entity.ChatMessage;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.project.service.ProjectService;
+import com.localflow.domain.agent.entity.AgentRun;
+import com.localflow.domain.agent.repository.AgentRunRepository;
 import com.localflow.global.error.CustomException;
 import com.localflow.global.error.ErrorCode;
 import java.util.List;
@@ -17,23 +19,27 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatMessageService {
     private final ChatMessageRepository repository;
     private final ProjectService projectService;
+    private final AgentRunRepository runRepository;
 
-    public ChatMessageService(ChatMessageRepository repository, ProjectService projectService) {
+    public ChatMessageService(ChatMessageRepository repository, ProjectService projectService,
+                              AgentRunRepository runRepository) {
         this.repository = repository;
         this.projectService = projectService;
+        this.runRepository = runRepository;
     }
 
     @Transactional
     public ChatMessageResponse create(String projectId, ChatMessageCreateRequest request) {
         Project project = projectService.requireProject(projectId);
         ChatMessage message = ChatMessage.create(project, request.type(), request.content().strip());
-        return ChatMessageResponse.from(repository.save(message));
+        return ChatMessageResponse.from(repository.save(message), null);
     }
 
     public List<ChatMessageResponse> findAll(String projectId) {
         projectService.requireProject(projectId);
         return repository.findAllByProject_IdOrderByCreatedAtAsc(projectId).stream()
-                .map(ChatMessageResponse::from).toList();
+                .map(message -> ChatMessageResponse.from(message, relatedRun(projectId, message.getId())))
+                .toList();
     }
 
     @Transactional
@@ -44,5 +50,10 @@ public class ChatMessageService {
             throw new CustomException(ErrorCode.CHAT_MESSAGE_NOT_FOUND);
         }
         repository.delete(message);
+    }
+
+    private AgentRun relatedRun(String projectId, String messageId) {
+        return runRepository.findFirstByProject_IdAndSourceMessageIdOrderByCreatedAtDesc(
+                projectId, messageId).orElse(null);
     }
 }

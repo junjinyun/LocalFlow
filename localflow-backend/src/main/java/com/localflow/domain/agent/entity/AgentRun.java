@@ -107,6 +107,9 @@ public class AgentRun {
     @Column(length = 36)
     private String retriedByRunId;
 
+    @Column(length = 36)
+    private String sourceMessageId;
+
     private Integer inputTokens;
     private Integer outputTokens;
 
@@ -150,7 +153,13 @@ public class AgentRun {
         AgentRun retry = draft(source.project, source.prompt, source.executionMode,
                 source.preferredGenerationProvider, source.preferredModel);
         retry.retryOfRunId = source.id;
+        retry.sourceMessageId = source.sourceMessageId;
         return retry;
+    }
+
+    public void linkSourceMessage(String messageId) {
+        this.sourceMessageId = messageId == null || messageId.isBlank() ? null : messageId;
+        touch();
     }
 
     public void markRetriedBy(String runId) {
@@ -353,6 +362,7 @@ public class AgentRun {
     public String getErrorRecommendedAction() { return errorRecommendedAction; }
     public String getRetryOfRunId() { return retryOfRunId; }
     public String getRetriedByRunId() { return retriedByRunId; }
+    public String getSourceMessageId() { return sourceMessageId; }
     public Integer getInputTokens() { return inputTokens; }
     public Integer getOutputTokens() { return outputTokens; }
     public int getProviderRetryCount() { return providerRetryCount; }

@@ -148,10 +148,10 @@ export const api = {
     progress: (projectId: string, runId: string) =>
       request<AgentRunProgress[]>(`/api/projects/${projectId}/agent-runs/${runId}/progress`),
     create: (projectId: string, prompt: string, executionMode: ExecutionMode, provider: ProviderType | null,
-      model: string | null) =>
+      model: string | null, sourceMessageId?: string | null) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs`, {
         method: 'POST',
-        body: JSON.stringify({ prompt, executionMode, preferredGenerationProvider: provider, preferredModel: model }),
+        body: JSON.stringify({ prompt, executionMode, preferredGenerationProvider: provider, preferredModel: model, sourceMessageId }),
       }),
     cancel: (projectId: string, runId: string) =>
       request<AgentRun>(`/api/projects/${projectId}/agent-runs/${runId}/cancel`, { method: 'POST' }),

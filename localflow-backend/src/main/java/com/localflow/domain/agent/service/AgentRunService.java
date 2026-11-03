@@ -9,6 +9,8 @@ import com.localflow.domain.agent.entity.AgentRun;
 import com.localflow.domain.agent.repository.AgentRunRepository;
 import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.project.service.ProjectService;
+import com.localflow.domain.chat.entity.ChatMessage;
+import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.global.error.CustomException;
 import com.localflow.global.error.ErrorCode;
 import java.util.List;
@@ -31,12 +33,15 @@ public class AgentRunService {
     private final ProjectService projectService;
     private final AgentRunRepository repository;
     private final AgentPlanParser planParser;
+    private final ChatMessageRepository chatMessageRepository;
 
     public AgentRunService(ProjectService projectService, AgentRunRepository repository,
-                           AgentPlanParser planParser) {
+                           AgentPlanParser planParser,
+                           ChatMessageRepository chatMessageRepository) {
         this.projectService = projectService;
         this.repository = repository;
         this.planParser = planParser;
+        this.chatMessageRepository = chatMessageRepository;
     }
 
     @Transactional
@@ -47,6 +52,14 @@ public class AgentRunService {
         }
         AgentRun run = AgentRun.draft(project, request.prompt().strip(), request.executionMode(),
                 request.preferredGenerationProvider(), request.preferredModel());
+        if (request.sourceMessageId() != null && !request.sourceMessageId().isBlank()) {
+            ChatMessage message = chatMessageRepository.findById(request.sourceMessageId())
+                    .orElseThrow(() -> new CustomException(ErrorCode.CHAT_MESSAGE_NOT_FOUND));
+            if (!message.getProject().getId().equals(projectId)) {
+                throw new CustomException(ErrorCode.CHAT_MESSAGE_NOT_FOUND);
+            }
+            run.linkSourceMessage(message.getId());
+        }
         return AgentRunResponse.from(repository.save(run));
     }
 

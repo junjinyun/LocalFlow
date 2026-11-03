@@ -72,7 +72,8 @@ export type FileSyncResult = {
 
 export type ChatMessage = {
   id: string; projectId: string; type: 'PROMPT' | 'HANDOFF' | 'NOTE' | 'SYSTEM'
-  content: string; createdAt: string
+  content: string; relatedRunId: string | null; relatedRunStatus: string | null
+  relatedRunNotice: string | null; createdAt: string
 }
 
 export type MemoryType = 'PROJECT_RULE' | 'IMPLEMENTATION_DECISION' | 'OPEN_TASK' | 'ERROR_CONTEXT' | 'NOTE'
@@ -252,7 +253,7 @@ export type AgentRun = {
   resultMessage: string | null; errorMessage: string | null; model: string | null
   providerErrorCode: ProviderErrorCode | null; errorRetryable: boolean | null
   errorRecommendedAction: string | null
-  retryOfRunId: string | null; retriedByRunId: string | null
+  retryOfRunId: string | null; retriedByRunId: string | null; sourceMessageId: string | null
   inputTokens: number | null; outputTokens: number | null
   providerRetryCount: number; lastProviderRetryAt: string | null
   createdAt: string; updatedAt: string; completedAt: string | null
