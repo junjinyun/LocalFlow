@@ -36,4 +36,6 @@ public interface AgentRunRepository extends JpaRepository<AgentRun, String> {
     List<AgentRun> findAllByStatusIn(List<AgentRunStatus> statuses);
 
     void deleteAllByProject_Id(String projectId);
+    Optional<AgentRun> findFirstByProject_IdAndSourceMessageIdOrderByCreatedAtDesc(
+            String projectId, String sourceMessageId);
 }

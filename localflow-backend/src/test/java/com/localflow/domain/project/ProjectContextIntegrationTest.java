@@ -8,6 +8,7 @@ import com.localflow.domain.agent.dto.response.AgentRunResponse;
 import com.localflow.domain.agent.service.AgentRunService;
 import com.localflow.domain.chat.domain.ChatMessageType;
 import com.localflow.domain.chat.dto.ChatMessageCreateRequest;
+import com.localflow.domain.chat.dto.ChatMessageResponse;
 import com.localflow.domain.chat.service.ChatMessageService;
 import com.localflow.domain.memory.domain.MemoryType;
 import com.localflow.domain.memory.dto.ProjectMemoryCreateRequest;
@@ -35,17 +36,22 @@ class ProjectContextIntegrationTest {
     void storesProjectConversationMemoryAndAgentDraftBeforeExecution() {
         ProjectResponse project = projectService.create(new ProjectCreateRequest("localflow", null));
 
-        chatService.create(project.id(), new ChatMessageCreateRequest(
+        ChatMessageResponse message = chatService.create(project.id(), new ChatMessageCreateRequest(
                 ChatMessageType.PROMPT, "로그인 실패 차단 기능을 추가해줘"));
         memoryService.create(project.id(), new ProjectMemoryCreateRequest(
                 MemoryType.PROJECT_RULE, "예외 응답 규칙", "모든 오류는 공통 응답을 사용한다."));
         AgentRunResponse run = agentRunService.createDraft(project.id(), new AgentRunCreateRequest(
-                "로그인 실패 차단 기능 구현", ExecutionMode.CONFIRM_EVERY_STEP, AiProviderType.OLLAMA));
+                "로그인 실패 차단 기능 구현", ExecutionMode.CONFIRM_EVERY_STEP,
+                AiProviderType.OLLAMA, null, message.id()));
 
-        assertThat(chatService.findAll(project.id())).hasSize(1);
+        assertThat(chatService.findAll(project.id())).singleElement().satisfies(linked -> {
+            assertThat(linked.relatedRunId()).isEqualTo(run.runId());
+            assertThat(linked.relatedRunStatus()).isEqualTo(run.status());
+        });
         assertThat(memoryService.findAll(project.id(), true)).hasSize(1);
         assertThat(agentRunService.findAll(project.id())).extracting("runId").contains(run.runId());
         assertThat(run.notice()).contains("실행 전 초안");
+        assertThat(run.sourceMessageId()).isEqualTo(message.id());
     }
 
     @Test

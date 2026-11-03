@@ -141,7 +141,7 @@ export default function App() {
             </nav>
             <div className="view-container">
               {tab === 'workspace' && <WorkspaceView project={selected} onProjectRefresh={() => refreshProject(selected.id)} notify={notify} />}
-              {tab === 'chat' && <ChatView project={selected} providers={providers} notify={notify} />}
+              {tab === 'chat' && <ChatView project={selected} providers={providers} notify={notify} onOpenRun={openRun} />}
               {tab === 'memory' && <MemoryView project={selected} notify={notify} />}
               {tab === 'runs' && <RunsView project={selected} notify={notify} focusRunId={focusedRunId} onFocusHandled={() => setFocusedRunId(null)} />}
               {tab === 'settings' && <SettingsView project={selected} providers={providers} onProvidersRefreshed={setProviders} onUpdated={updateProject} onRemoved={removeProject} notify={notify} browserNotifications={browserNotifications} onBrowserNotificationsChange={setBrowserNotifications} />}

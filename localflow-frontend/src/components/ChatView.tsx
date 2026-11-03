@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Ban, Bot, CornerDownLeft, Info, LoaderCircle, MessageSquare, Send, Trash2, UserRound } from 'lucide-react'
+import { Ban, Bot, CornerDownLeft, ExternalLink, Info, LoaderCircle, MessageSquare, Send, Trash2, UserRound } from 'lucide-react'
 import { api } from '../api'
 import type { AgentRunProgress, ChatMessage, ExecutionMode, PrivacyMode, Project, Provider, ProviderType } from '../types'
 import AgentProgressTimeline from './AgentProgressTimeline'
@@ -9,6 +9,7 @@ type Props = {
   project: Project
   providers: Provider[]
   notify: (message: string, tone?: 'success' | 'error') => void
+  onOpenRun: (runId: string) => void
 }
 
 const typeLabels: Record<ChatMessage['type'], string> = {
@@ -17,7 +18,7 @@ const typeLabels: Record<ChatMessage['type'], string> = {
 const pollingStatuses = new Set(['PENDING', 'DECIDING', 'PLANNING', 'VALIDATING', 'RUNNING', 'CANCEL_REQUESTED'])
 const blockingStatuses = new Set([...pollingStatuses, 'WAITING_APPROVAL'])
 
-export default function ChatView({ project, providers, notify }: Props) {
+export default function ChatView({ project, providers, notify, onOpenRun }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [content, setContent] = useState('')
   const [type, setType] = useState<ChatMessage['type']>('PROMPT')
@@ -188,6 +189,7 @@ export default function ChatView({ project, providers, notify }: Props) {
           executionMode,
           provider || null,
           modelSelectable ? model : null,
+          message.id,
         )
         await refreshProgress(draft.runId)
         const queued = await api.runs.execute(project.id, draft.runId)
@@ -243,7 +245,7 @@ export default function ChatView({ project, providers, notify }: Props) {
           {messages.map(message => (
             <article className="message-card" key={message.id}>
               <span className="message-avatar">{message.type === 'SYSTEM' ? <Bot size={16} /> : <UserRound size={16} />}</span>
-              <div><header><strong>{typeLabels[message.type]}</strong><time>{new Date(message.createdAt).toLocaleString('ko-KR')}</time></header><MarkdownContent content={message.content} /></div>
+              <div><header><strong>{typeLabels[message.type]}</strong><time>{new Date(message.createdAt).toLocaleString('ko-KR')}</time></header><MarkdownContent content={message.content} />{message.relatedRunId && <button className="message-run-link" onClick={() => onOpenRun(message.relatedRunId!)}><span className={`run-status ${message.relatedRunStatus?.toLowerCase() ?? ''}`}>{message.relatedRunStatus}</span><span>{message.relatedRunNotice ?? '실행 상세 확인'}</span><ExternalLink size={13} /></button>}</div>
               <button className="icon-button subtle danger" onClick={() => remove(message.id)}><Trash2 size={14} /></button>
             </article>
           ))}
@@ -275,7 +277,7 @@ export default function ChatView({ project, providers, notify }: Props) {
         {privacyBlocked && <div className="side-note warning"><Info size={17} /><div><strong>로컬 전용 설정</strong><p>외부 AI를 실행하려면 설정 탭에서 개인정보 모드를 외부 AI 전송 허용으로 변경해야 합니다.</p></div></div>}
         {selectedProvider && !selectedProvider.available && <div className="side-note warning"><Info size={17} /><div><strong>{selectedProvider.displayName}을 사용할 수 없습니다.</strong><p>{selectedProvider.statusMessage}</p></div></div>}
         {runBlocksExecution && <div className="side-note"><Info size={17} /><div><strong>진행 중인 작업이 있습니다.</strong><p>다른 탭을 다녀오거나 화면을 새로고침해도 백엔드 실행 상태와 진행 기록을 계속 조회합니다.</p></div></div>}
-        {activeRunId && activeRunStatus && !['CANCEL_REQUESTED', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(activeRunStatus) && <button className="secondary-button danger-text" disabled={sending} onClick={cancelActiveRun}><Ban size={15} />실행 취소</button>}
+        {activeRunId && activeRunStatus && !['CANCEL_REQUESTED', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED', 'CANCELLED'].includes(activeRunStatus) && <button className="secondary-button danger-text" disabled={sending} onClick={cancelActiveRun}><Ban size={15} />실행 취소</button>}
         <div className="form-stack compact-form">
           <label>실행 모드<select value={executionMode} onChange={event => setExecutionMode(event.target.value as ExecutionMode)}><option value="CONFIRM_EVERY_STEP">매 단계 확인</option><option value="BALANCED">균형 모드</option><option value="AUTONOMOUS">자율 실행</option></select></label>
           <label>생성 AI<select value={provider} onChange={event => setProvider(event.target.value as ProviderType)}>{generationProviders.map(item => <option key={item.type} value={item.type} disabled={!item.available}>{item.displayName}{providerUnavailableLabel(item)}</option>)}</select></label>
