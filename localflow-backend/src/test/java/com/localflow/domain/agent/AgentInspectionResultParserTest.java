@@ -29,4 +29,18 @@ class AgentInspectionResultParserTest {
 
         assertThat(result.findings()).isEmpty();
     }
+
+    @Test
+    void removesEvidenceSectionFromResponseAndAppendsDistinctStructuredFindingsOnce() {
+        var result = parser.parse("""
+                {"summary":"JWT 분석","response":"JWT 토큰을 검증합니다.\\n\\n주요 근거:\\n- 기존 중복 근거",
+                 "findings":["JwtProvider가 검증합니다.","JwtProvider가 검증합니다."]}
+                """);
+
+        assertThat(result.findings()).containsExactly("JwtProvider가 검증합니다.");
+        assertThat(result.toPlan().response())
+                .containsOnlyOnce("주요 근거:")
+                .containsOnlyOnce("JwtProvider가 검증합니다.")
+                .doesNotContain("기존 중복 근거");
+    }
 }
