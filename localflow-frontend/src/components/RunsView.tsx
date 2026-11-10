@@ -489,6 +489,20 @@ export default function RunsView({ project, notify, focusRunId, onFocusHandled }
               {decision?.selectedTags && decision.selectedTags.length > 0 && <><dt>선택 태그</dt><dd>{decision.selectedTags.join(' · ')}</dd></>}
             </dl>
             {!inputSnapshot ? <p className="run-input-empty">이 실행에는 저장된 AI 입력 스냅샷이 없습니다.</p> : <div className="run-input-snapshot">
+              {inputSnapshot.taskSnapshots && inputSnapshot.taskSnapshots.length > 0 && <details>
+                <summary>작업별 AI 입력 <span>{inputSnapshot.taskSnapshots.length}</span><ChevronRight size={15} /></summary>
+                <div className="task-input-snapshot-list">{inputSnapshot.taskSnapshots.map(task => <details key={task.taskId}>
+                  <summary>{task.order}. {task.instruction}<span>{task.input.contextFiles.length}개 파일</span><ChevronRight size={14} /></summary>
+                  <dl className="execution-grid">
+                    <dt>작업 ID</dt><dd><code>{task.taskId}</code></dd>
+                    <dt>전달 파일</dt><dd>{task.input.contextFiles.length}개</dd>
+                    <dt>프로젝트 기억</dt><dd>{task.input.memories.length}개</dd>
+                  </dl>
+                  {task.input.contextFiles.length > 0 && <ul>{task.input.contextFiles.map(path => <li key={path}><code>{path}</code></li>)}</ul>}
+                  <strong>시스템 전처리 프롬프트</strong><pre>{task.input.systemPrompt}</pre>
+                  <strong>사용자 전처리 프롬프트</strong><pre>{task.input.userPrompt}</pre>
+                </details>)}</div>
+              </details>}
               {inputSnapshot.budget && <details>
                 <summary>컨텍스트 예산 <span>{inputSnapshot.budget.usedInputChars.toLocaleString()} / {inputSnapshot.budget.maxInputChars.toLocaleString()}자</span><ChevronRight size={15} /></summary>
                 <dl className="execution-grid">

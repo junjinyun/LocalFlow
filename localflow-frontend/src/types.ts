@@ -134,6 +134,12 @@ export type AgentInputSnapshot = {
     truncatedFiles: string[]
     excludedFiles: Array<{ path: string; reason: string }>
   } | null
+  taskSnapshots?: Array<{
+    taskId: string
+    order: number
+    instruction: string
+    input: AgentInputSnapshot
+  }>
 }
 export type AgentPlan = { summary: string; response: string; operations: FileOperation[] }
 export type AgentApplyResult = {

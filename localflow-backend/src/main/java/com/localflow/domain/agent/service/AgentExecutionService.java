@@ -534,8 +534,8 @@ public class AgentExecutionService {
                 GenerationRequest prepared = request.withSchemaInstruction(responseName);
                 contextBudgetPolicy.validateRequest(contextBudget,
                         prepared.systemPrompt(), prepared.userPrompt());
-                run.recordInputSnapshot(objectMapper.writeValueAsString(inputSnapshot(
-                        contextSnapshot, prepared, contextBudget)));
+                recordTaskInputSnapshot(run, task, index + 1,
+                        inputSnapshot(contextSnapshot, prepared, contextBudget));
                 estimatedInputTokens += estimateTokens(prepared);
                 recordUsage(run, provider.providerType(), selectedModel, estimatedInputTokens,
                         inputTokens, outputTokens);
@@ -1010,6 +1010,16 @@ public class AgentExecutionService {
                 context.files(), context.truncatedFiles(), context.excludedFiles());
         return new AgentInputSnapshot(context.files(), context.memories(),
                 request.systemPrompt(), request.userPrompt(), inputBudget, context.fileSelections());
+    }
+
+    private void recordTaskInputSnapshot(AgentRun run, DecomposedTask task, int order,
+                                         AgentInputSnapshot current) throws Exception {
+        AgentInputSnapshot history = current;
+        if (run.getInputSnapshotJson() != null && !run.getInputSnapshotJson().isBlank()) {
+            history = objectMapper.readValue(run.getInputSnapshotJson(), AgentInputSnapshot.class);
+        }
+        run.recordInputSnapshot(objectMapper.writeValueAsString(
+                history.appendTaskSnapshot(task.id(), order, task.instruction(), current)));
     }
 
     private String safeMessage(Exception exception) {
