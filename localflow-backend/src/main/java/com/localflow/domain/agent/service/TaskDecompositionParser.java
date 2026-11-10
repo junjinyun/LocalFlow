@@ -69,27 +69,45 @@ public class TaskDecompositionParser {
         if (!isConditional(prompt)) return decomposition;
         String instructions = decomposition.tasks().stream()
                 .map(DecomposedTask::instruction).reduce("", (left, right) -> left + " " + right);
-        if (preservesMarkers(prompt, instructions)) return decomposition;
+        if (decomposition.tasks().size() == 1
+                && preservesMarkers(prompt, instructions)
+                && sameInstruction(prompt, decomposition.tasks().get(0).instruction())) {
+            return decomposition;
+        }
         DecomposedTask guarded = new DecomposedTask("task-conditional", prompt.strip(), List.of(),
                 localDecomposer.tagsFor(prompt, availableTags),
-                List.of("현재 프로젝트에서 조건을 확인한 후 해당하는 분기만 수행한다."));
+                List.of("현재 프로젝트에서 조건을 확인한 후 해당하는 분기만 수행한다.",
+                        "원래 요청의 출력 형식과 파일 변경 제한을 그대로 지킨다."));
         return new TaskDecomposition("조건부 요청 분기 보존", "CONDITION_GUARD",
                 List.of(guarded));
     }
 
     private boolean isConditional(String value) {
         String lower = value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
-        return lower.matches(".*(있으면|있다면|없으면|없다면|없을\\s*경우|if\\s+.*(?:else|otherwise)|if\\s+not).*" );
+        return hasPresentCondition(lower) || hasAbsentCondition(lower)
+                || lower.matches(".*(if\\s+.*(?:else|otherwise)|if\\s+not).*" );
     }
 
     private boolean preservesMarkers(String original, String instructions) {
         String source = original.toLowerCase(java.util.Locale.ROOT);
         String result = instructions.toLowerCase(java.util.Locale.ROOT);
-        boolean presentPreserved = !source.matches(".*(있으면|있다면).*")
-                || result.matches(".*(있으면|있다면).*" );
-        boolean absentPreserved = !source.matches(".*(없으면|없다면|없을\\s*경우|if\\s+not).*")
-                || result.matches(".*(없으면|없다면|없을\\s*경우|if\\s+not).*" );
+        boolean presentPreserved = !hasPresentCondition(source) || hasPresentCondition(result);
+        boolean absentPreserved = !hasAbsentCondition(source) || hasAbsentCondition(result);
         return presentPreserved && absentPreserved;
+    }
+
+    private boolean hasPresentCondition(String value) {
+        return value.matches(".*(있으면|있다면|있는\\s*경우|존재하면|존재할\\s*경우).*" );
+    }
+
+    private boolean hasAbsentCondition(String value) {
+        return value.matches(".*(없으면|없다면|없는\\s*경우|없을\\s*경우|존재하지\\s*않으면|존재하지\\s*않을\\s*경우|if\\s+not).*" );
+    }
+
+    private boolean sameInstruction(String original, String instruction) {
+        if (original == null || instruction == null) return false;
+        return original.strip().replaceAll("\\s+", " ")
+                .equals(instruction.strip().replaceAll("\\s+", " "));
     }
 
     public String toJson(TaskDecomposition decomposition) {
