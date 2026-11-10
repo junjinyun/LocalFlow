@@ -27,7 +27,11 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AgentContextService {
-    private static final int MAX_CONTEXT_FILES = 12;
+    private static final int MAX_CONTEXT_FILES = 8;
+    private static final int MAX_DECOMPOSITION_CONTEXT_CHARS = 16_000;
+    private static final int MAX_RECENT_MESSAGES = 8;
+    private static final int MAX_RECENT_MESSAGE_CHARS = 600;
+    private static final int MAX_RECENT_CONTEXT_CHARS = 4_000;
     private static final int MIN_CONTEXT_SCORE = 10;
     private static final Set<String> GENERIC_TERMS = Set.of(
             "json", "web", "code", "file", "files", "코드", "파일", "확인", "현재", "기능");
@@ -66,7 +70,8 @@ public class AgentContextService {
                 .distinct().sorted().toList().toString());
         append(context, "전체 파일 인덱스", files.stream()
                 .map(file -> file.getRelativePath() + " tags=" + file.getTags()).toList().toString());
-        return context.substring(0, Math.min(context.length(), properties.contextMaxChars()));
+        int limit = Math.min(properties.contextMaxChars(), MAX_DECOMPOSITION_CONTEXT_CHARS);
+        return context.substring(0, Math.min(context.length(), limit));
     }
 
     public ContextSnapshot buildSnapshot(Project project, String prompt,
@@ -251,10 +256,20 @@ public class AgentContextService {
 
     private String recentMessages(String projectId) {
         List<ChatMessage> values = chatRepository.findAllByProject_IdOrderByCreatedAtAsc(projectId);
-        int start = Math.max(0, values.size() - 12);
         List<String> lines = new ArrayList<>();
-        values.subList(start, values.size()).forEach(message ->
-                lines.add("[" + message.getType() + "] " + abbreviate(message.getContent(), 1200)));
+        int usedChars = 0;
+        for (int index = values.size() - 1;
+             index >= 0 && lines.size() < MAX_RECENT_MESSAGES;
+             index--) {
+            ChatMessage message = values.get(index);
+            String line = "[" + message.getType() + "] "
+                    + abbreviate(message.getContent(), MAX_RECENT_MESSAGE_CHARS);
+            int remaining = MAX_RECENT_CONTEXT_CHARS - usedChars;
+            if (remaining < 80) break;
+            line = abbreviate(line, remaining);
+            lines.add(0, line);
+            usedChars += line.length() + 1;
+        }
         return lines.isEmpty() ? "(없음)" : String.join("\n", lines);
     }
 
@@ -263,7 +278,11 @@ public class AgentContextService {
     }
 
     private String nullable(String value) { return value == null || value.isBlank() ? "(없음)" : value; }
-    private String abbreviate(String value, int max) { return value.length() <= max ? value : value.substring(0, max) + "…"; }
+    private String abbreviate(String value, int max) {
+        if (value.length() <= max) return value;
+        if (max <= 1) return "…";
+        return value.substring(0, max - 1) + "…";
+    }
 
     public record ContextSnapshot(String content, List<String> files, List<MemoryReference> memories,
                                   List<String> truncatedFiles, List<ExcludedFile> excludedFiles,

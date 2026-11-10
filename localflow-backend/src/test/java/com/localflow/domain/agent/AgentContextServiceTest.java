@@ -5,6 +5,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.localflow.domain.agent.service.AgentContextService;
+import com.localflow.domain.chat.domain.ChatMessageType;
+import com.localflow.domain.chat.entity.ChatMessage;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
 import com.localflow.domain.memory.service.ProjectMemoryScopeMatcher;
@@ -16,6 +18,7 @@ import com.localflow.domain.workspace.entity.ProjectFile;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
 import com.localflow.domain.workspace.service.WorkspaceStorageService;
 import java.util.List;
+import java.util.ArrayList;
 import org.junit.jupiter.api.Test;
 
 class AgentContextServiceTest {
@@ -158,5 +161,40 @@ class AgentContextServiceTest {
 
         assertThat(jwtSnapshot.files()).contains(jwt.getRelativePath()).doesNotContain(lock.getRelativePath());
         assertThat(dependencySnapshot.files()).contains(lock.getRelativePath());
+    }
+
+    @Test
+    void limitsRecentConversationDecompositionContextAndSelectedFileCount() {
+        Project project = Project.create("sample", null);
+        List<ProjectFile> files = new ArrayList<>();
+        for (int index = 0; index < 12; index++) {
+            ProjectFile file = ProjectFile.create(project, "src/auth/Auth" + index + ".java",
+                    "Auth" + index + ".java", "java", FileCategory.SOURCE_CODE,
+                    "java", 20, "hash-" + index);
+            file.replaceTags(List.of("authentication"));
+            files.add(file);
+            when(storageService.readText(project.getId(), file.getRelativePath()))
+                    .thenReturn("class Auth" + index + " {}");
+        }
+        List<ChatMessage> messages = new ArrayList<>();
+        for (int index = 0; index < 12; index++) {
+            messages.add(ChatMessage.create(project, ChatMessageType.PROMPT,
+                    "message-" + index + "-" + "x".repeat(900)));
+        }
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId())).thenReturn(files);
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(messages);
+        DecisionResult decision = DecisionResult.fallback("INSPECT_FILES", null,
+                List.of(new com.localflow.domain.provider.domain.TaskScope(
+                        "인증 구조 확인", List.of("authentication"))), "LOW", false);
+
+        String decompositionContext = service.buildDecompositionContext(project);
+        var snapshot = service.buildSnapshot(project, "인증 구조 확인", decision, true);
+
+        assertThat(decompositionContext.length()).isLessThanOrEqualTo(16_000);
+        assertThat(decompositionContext).contains("message-11-").doesNotContain("message-0-");
+        assertThat(snapshot.files()).hasSize(8);
     }
 }
