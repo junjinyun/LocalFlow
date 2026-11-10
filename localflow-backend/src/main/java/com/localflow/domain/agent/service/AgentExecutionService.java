@@ -962,9 +962,10 @@ public class AgentExecutionService {
 
     private String userPrompt(String prompt, TaskDecomposition decomposition,
                               DecisionResult decision, String context) {
-        return "AI 작업 분해 결과: " + decomposition + "\n\nJev 또는 로컬 판단 결과: " + decision
+        String composed = "AI 작업 분해 결과: " + decomposition + "\n\nJev 또는 로컬 판단 결과: " + decision
                 + "\n\n사용자 요청:\n" + prompt
                 + "\n\n프로젝트 맥락:\n" + context;
+        return AgentPromptPolicy.reinforceFinalConstraints(composed, prompt);
     }
 
     private Integer sumTokens(Integer first, Integer second) {
