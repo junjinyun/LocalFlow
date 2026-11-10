@@ -30,4 +30,27 @@ class AgentInputSnapshotTest {
 
         assertThat(response.inputSnapshotJson()).isEqualTo(snapshot);
     }
+
+    @Test
+    void accumulatesTaskInputsAndReadsLegacySnapshotWithoutHistory() throws Exception {
+        AgentInputSnapshot legacy = objectMapper.readValue("""
+                {"contextFiles":["src/Legacy.java"],"memories":[],
+                 "systemPrompt":"system","userPrompt":"legacy","budget":null,"fileSelections":[]}
+                """, AgentInputSnapshot.class);
+        AgentInputSnapshot first = new AgentInputSnapshot(List.of("src/First.java"), List.of(),
+                "system", "first task");
+        AgentInputSnapshot second = new AgentInputSnapshot(List.of("src/Second.java"), List.of(),
+                "system", "second task");
+
+        AgentInputSnapshot accumulated = legacy
+                .appendTaskSnapshot("task-1", 1, "첫 작업", first)
+                .appendTaskSnapshot("task-2", 2, "둘째 작업", second);
+
+        assertThat(legacy.taskSnapshots()).isEmpty();
+        assertThat(accumulated.contextFiles()).containsExactly("src/Second.java");
+        assertThat(accumulated.taskSnapshots()).extracting(AgentInputSnapshot.TaskInputSnapshot::taskId)
+                .containsExactly("task-1", "task-2");
+        assertThat(accumulated.taskSnapshots().get(0).input().contextFiles())
+                .containsExactly("src/First.java");
+    }
 }
