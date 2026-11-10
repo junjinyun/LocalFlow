@@ -202,7 +202,7 @@ public class AgentExecutionService {
                         "요청을 " + decomposition.value().tasks().size() + "개의 작업 단위로 정리했습니다.");
             }
             progressService.append(projectId, runId, AgentProgressStage.DECIDING,
-                    "Jev가 관련 태그, 대상 범위와 작업 위험도를 판단하는 중입니다.");
+                    AgentProgressMessages.decisionStarted());
             DecisionResult decision = decisionService.decide(run.getPrompt(), files,
                     settings.getPrivacyMode() == PrivacyMode.EXTERNAL_ALLOWED, decomposition.value(),
                     () -> cancellationService.checkpoint(projectId, runId),
