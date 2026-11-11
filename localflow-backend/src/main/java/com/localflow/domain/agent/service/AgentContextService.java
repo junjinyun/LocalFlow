@@ -113,6 +113,7 @@ public class AgentContextService {
                 .forEach(file -> excludedFiles.add(new ExcludedFile(
                         file.getRelativePath(), "관련도 우선순위에서 컨텍스트 대상 밖으로 제외되었습니다.")));
         if (includeContents) {
+            boolean inspectionContext = isInspection(decision.actionType());
             for (ScoredFile selected : selectedFiles) {
                 ProjectFile file = selected.file();
                 if (context.length() >= maxContextChars) {
@@ -120,6 +121,7 @@ public class AgentContextService {
                     continue;
                 }
                 String content = storageService.readText(project.getId(), file.getRelativePath());
+                if (inspectionContext) content = withLineNumbers(content);
                 int remaining = maxContextChars - context.length();
                 if (remaining <= 100) {
                     excludedFiles.add(new ExcludedFile(file.getRelativePath(), "파일 본문을 넣을 예산이 부족합니다."));
@@ -275,6 +277,20 @@ public class AgentContextService {
 
     private void append(StringBuilder target, String title, String value) {
         target.append("\n## ").append(title).append('\n').append(value).append('\n');
+    }
+
+    private boolean isInspection(String actionType) {
+        return "INSPECT_FILES".equals(actionType) || "ANSWER_ONLY".equals(actionType);
+    }
+
+    private String withLineNumbers(String content) {
+        String[] lines = content.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
+        StringBuilder numbered = new StringBuilder(content.length() + lines.length * 8);
+        for (int index = 0; index < lines.length; index++) {
+            if (index > 0) numbered.append('\n');
+            numbered.append(index + 1).append(" | ").append(lines[index]);
+        }
+        return numbered.toString();
     }
 
     private String nullable(String value) { return value == null || value.isBlank() ? "(없음)" : value; }

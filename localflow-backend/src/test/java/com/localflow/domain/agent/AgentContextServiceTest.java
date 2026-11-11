@@ -80,6 +80,33 @@ class AgentContextServiceTest {
     }
 
     @Test
+    void addsRealLineNumbersOnlyToInspectionContext() {
+        Project project = Project.create("sample", null);
+        ProjectFile source = ProjectFile.create(project, "src/App.java", "App.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-lines");
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of(source));
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of());
+        when(storageService.readText(project.getId(), source.getRelativePath()))
+                .thenReturn("class App {\n    void run() {}\n}");
+
+        var inspection = service.buildSnapshot(project, "App 확인",
+                DecisionResult.fallback("INSPECT_FILES", source.getRelativePath(),
+                        List.of(), "LOW", false), true);
+        var modification = service.buildSnapshot(project, "App 수정",
+                DecisionResult.fallback("UPDATE_FILES", source.getRelativePath(),
+                        List.of(), "LOW", false), true);
+
+        assertThat(inspection.content()).contains(
+                "1 | class App {", "2 |     void run() {}", "3 | }");
+        assertThat(modification.content()).contains("class App {\n    void run() {}\n}")
+                .doesNotContain("1 | class App {");
+    }
+
+    @Test
     void reportsTruncatedAndExcludedFilesWhenBudgetIsLimited() {
         Project project = Project.create("sample", null);
         ProjectFile primary = ProjectFile.create(project, "src/App.java", "App.java",
