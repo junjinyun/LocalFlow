@@ -6,6 +6,7 @@ import static org.mockito.Mockito.doThrow;
 import com.localflow.domain.memory.domain.MemoryCandidateExtractionRequestedEvent;
 import com.localflow.domain.memory.domain.MemoryCandidateSourceType;
 import com.localflow.domain.memory.service.MemoryCandidateExtractionListener;
+import com.localflow.domain.memory.service.MemoryCandidateExtractionHistoryService;
 import com.localflow.domain.memory.service.ProjectMemoryCandidateService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class MemoryCandidateExtractionListenerTest {
     @Mock ProjectMemoryCandidateService candidateService;
+    @Mock MemoryCandidateExtractionHistoryService historyService;
 
     @Test
     void isolatesExtractionFailureFromOriginalOperation() {
@@ -25,7 +27,7 @@ class MemoryCandidateExtractionListenerTest {
                 .when(candidateService).extractSource(event.projectId(), event.sourceType(),
                         event.sourceId(), event.content());
 
-        var listener = new MemoryCandidateExtractionListener(candidateService);
+        var listener = new MemoryCandidateExtractionListener(candidateService, historyService);
 
         assertThatCode(() -> listener.handle(event)).doesNotThrowAnyException();
     }

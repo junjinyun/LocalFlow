@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Brain, CheckCircle2, Circle, Edit3, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, XCircle } from 'lucide-react'
 import { api } from '../api'
-import type { MemoryCandidate, MemoryType, Project, ProjectMemory } from '../types'
+import type { MemoryCandidate, MemoryCandidateExtractionHistory, MemoryType, Project, ProjectMemory } from '../types'
 import Modal from './Modal'
 
 const labels: Record<MemoryType, string> = {
@@ -12,6 +12,7 @@ const labels: Record<MemoryType, string> = {
 export default function MemoryView({ project, notify }: { project: Project; notify: (message: string, tone?: 'success' | 'error') => void }) {
   const [memories, setMemories] = useState<ProjectMemory[]>([])
   const [candidates, setCandidates] = useState<MemoryCandidate[]>([])
+  const [extractionHistory, setExtractionHistory] = useState<MemoryCandidateExtractionHistory[]>([])
   const [loading, setLoading] = useState(true)
   const [extracting, setExtracting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -29,10 +30,11 @@ export default function MemoryView({ project, notify }: { project: Project; noti
   const load = async () => {
     setLoading(true)
     try {
-      const [loadedMemories, loadedCandidates] = await Promise.all([
+      const [loadedMemories, loadedCandidates, loadedHistory] = await Promise.all([
         api.memories.list(project.id, activeOnly), api.memoryCandidates.list(project.id),
+        api.memoryCandidates.extractionHistory(project.id),
       ])
-      setMemories(loadedMemories); setCandidates(loadedCandidates)
+      setMemories(loadedMemories); setCandidates(loadedCandidates); setExtractionHistory(loadedHistory)
     }
     catch (error) { notify(error instanceof Error ? error.message : '프로젝트 기억을 불러오지 못했습니다.', 'error') }
     finally { setLoading(false) }
@@ -116,6 +118,14 @@ export default function MemoryView({ project, notify }: { project: Project; noti
         <div><p className="eyebrow">PROJECT MEMORY</p><h2>프로젝트 기억</h2><p>활성 항목은 향후 AI 요청의 전처리 맥락으로 사용할 수 있습니다.</p></div>
         <div className="inline-actions"><label className="check-row"><input type="checkbox" checked={activeOnly} onChange={event => setActiveOnly(event.target.checked)} />활성 항목만</label><button className="secondary-button" onClick={extractCandidates} disabled={extracting}>{extracting ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}대화에서 후보 찾기</button><button className="icon-button" onClick={load} title="새로고침"><RefreshCw size={16} /></button><button className="primary-button" onClick={openCreate}><Plus size={16} />기억 추가</button></div>
       </div>
+      {extractionHistory.length > 0 && <section className="memory-extraction-history">
+        <div className="memory-candidate-heading"><div><h3>최근 후보 추출</h3><p>자동·수동 추출의 최근 처리 결과입니다.</p></div></div>
+        <div className="memory-extraction-list">{extractionHistory.slice(0, 5).map(history => <article key={history.id} className={`memory-extraction-item ${history.status.toLowerCase()}`}>
+          {history.status === 'SUCCESS' ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+          <div><strong>{history.triggerType === 'MANUAL' ? '수동 검사' : history.triggerType === 'CHAT_MESSAGE' ? '새 대화' : 'AI 실행 결과'}</strong><span>{history.status === 'SUCCESS' ? `후보 ${history.createdCount}개 생성` : history.errorMessage ?? '추출 실패'}</span></div>
+          <time>{new Date(history.completedAt).toLocaleString('ko-KR')}</time>
+        </article>)}</div>
+      </section>}
       {candidates.length > 0 && <section className="memory-candidate-section">
         <div className="memory-candidate-heading"><div><h3>검토할 기억 후보 <span>{candidates.length}</span></h3><p>승인하기 전에는 AI 요청에 반영되지 않습니다.</p></div></div>
         <div className="memory-candidate-list">{candidates.map(candidate => <article id={`memory-candidate-${candidate.id}`} className="memory-candidate-card" key={candidate.id}>

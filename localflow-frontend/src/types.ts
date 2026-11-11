@@ -93,6 +93,18 @@ export type MemoryCandidate = {
   createdAt: string; reviewedAt: string | null
 }
 
+export type MemoryCandidateExtractionHistory = {
+  id: string
+  triggerType: 'MANUAL' | 'CHAT_MESSAGE' | 'AGENT_RUN'
+  sourceType: 'CHAT_MESSAGE' | 'AGENT_RUN' | null
+  sourceId: string | null
+  status: 'SUCCESS' | 'FAILED'
+  createdCount: number
+  errorMessage: string | null
+  startedAt: string
+  completedAt: string
+}
+
 export type ProviderType = 'JEV' | 'OPENAI' | 'VERTEX_AI' | 'OLLAMA' | 'GEMINI_CLI'
 export type ProviderErrorCode =
   | 'NOT_CONFIGURED' | 'AUTHENTICATION_FAILED' | 'PERMISSION_DENIED'
