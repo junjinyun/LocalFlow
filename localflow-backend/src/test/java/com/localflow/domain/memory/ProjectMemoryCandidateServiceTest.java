@@ -99,6 +99,31 @@ class ProjectMemoryCandidateServiceTest {
     }
 
     @Test
+    void keepsSourceExcerptAtExactlyFiveHundredCharactersWithoutEllipsis() {
+        stubSourceExtraction();
+        String content = "앞으로" + "가".repeat(497);
+
+        MemoryCandidateResponse result = service.extractSource(project.getId(),
+                MemoryCandidateSourceType.AGENT_RUN, "run-id", content).get(0);
+
+        assertThat(result.sourceExcerpt()).hasSize(500).isEqualTo(content);
+    }
+
+    @Test
+    void truncatesSourceExcerptIncludingEllipsisWithinFiveHundredCharacters() {
+        stubSourceExtraction();
+        String content = "앞으로" + "가".repeat(498);
+
+        MemoryCandidateResponse result = service.extractSource(project.getId(),
+                MemoryCandidateSourceType.AGENT_RUN, "run-id", content).get(0);
+
+        assertThat(result.sourceExcerpt())
+                .hasSize(500)
+                .endsWith("…")
+                .isEqualTo(content.substring(0, 499) + "…");
+    }
+
+    @Test
     void editedCandidateBecomesMemoryOnlyAfterApproval() {
         ProjectMemoryCandidate candidate = ProjectMemoryCandidate.create(project,
                 MemoryCandidateSourceType.CHAT_MESSAGE, "message-id", 0, "원문",
@@ -165,5 +190,14 @@ class ProjectMemoryCandidateServiceTest {
         assertThat(result.relationType()).isEqualTo(MemoryCandidateRelationType.CONFLICT);
         assertThat(result.relatedMemoryId()).isEqualTo(activeRule.getId());
         assertThat(result.relatedTitle()).isEqualTo(activeRule.getTitle());
+    }
+
+    private void stubSourceExtraction() {
+        when(projectService.requireProject(project.getId())).thenReturn(project);
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(candidateRepository.findAllByProject_IdAndStatusOrderByCreatedAtDesc(
+                project.getId(), MemoryCandidateStatus.PENDING)).thenReturn(List.of());
+        when(candidateRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 }
