@@ -78,6 +78,27 @@ class ProjectMemoryCandidateServiceTest {
     }
 
     @Test
+    void extractsOnlyRequestedChatSourceAndSkipsExistingCandidate() {
+        when(projectService.requireProject(project.getId())).thenReturn(project);
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(candidateRepository.findAllByProject_IdAndStatusOrderByCreatedAtDesc(
+                project.getId(), MemoryCandidateStatus.PENDING)).thenReturn(List.of());
+        when(candidateRepository.existsByProject_IdAndSourceTypeAndSourceIdAndSourceOrder(
+                project.getId(), MemoryCandidateSourceType.CHAT_MESSAGE, "message-id", 0))
+                .thenReturn(true);
+        when(candidateRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<MemoryCandidateResponse> result = service.extractSource(project.getId(),
+                MemoryCandidateSourceType.CHAT_MESSAGE, "message-id",
+                "앞으로 모든 API 응답은 ApiResponse 형식을 사용한다.");
+
+        assertThat(result).isEmpty();
+        verify(chatRepository, never()).findAllByProject_IdOrderByCreatedAtAsc(any());
+        verify(runRepository, never()).findAllByProject_IdOrderByCreatedAtDesc(any());
+    }
+
+    @Test
     void editedCandidateBecomesMemoryOnlyAfterApproval() {
         ProjectMemoryCandidate candidate = ProjectMemoryCandidate.create(project,
                 MemoryCandidateSourceType.CHAT_MESSAGE, "message-id", 0, "원문",
