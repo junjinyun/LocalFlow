@@ -274,6 +274,7 @@ public class AgentExecutionService {
             GenerationResult generation = planGeneration.generation();
             AgentPlan plan = ReadOnlyRequestPolicy.enforce(
                     run.getPrompt(), decision.actionType(), planGeneration.value());
+            plan = AgentResponsePolicy.apply(run.getPrompt(), contextSnapshot.content(), plan);
             if (planGeneration.attempts() > 1) {
                 progressService.append(projectId, runId, AgentProgressStage.PLANNING,
                         "파일 변경 계획의 구조화 응답을 재시도하여 정상 형식으로 복구했습니다.");
@@ -556,6 +557,7 @@ public class AgentExecutionService {
                 saveTaskExecutions(run, executions);
                 AgentPlan plan = ReadOnlyRequestPolicy.enforce(
                         run.getPrompt(), decision.actionType(), generated.value());
+                plan = AgentResponsePolicy.apply(run.getPrompt(), contextSnapshot.content(), plan);
                 validatePolicies(settings, plan);
                 String planJson = planParser.toJson(plan);
                 String changesJson = snapshotJson(projectId, plan);
@@ -894,6 +896,8 @@ public class AgentExecutionService {
                 summary는 요청에 대한 결론을, response는 사용자가 읽을 상세 분석을 담는다.
                 findings에는 파일명, 코드 역할, 호출 관계 등 프로젝트에서 확인한 구체적 근거를 넣는다.
                 response에는 findings와 같은 근거 목록을 반복하지 말고 결론과 설명만 작성한다.
+                사용자 프롬프트의 '응답 형식 계약'은 response와 findings를 합친 최종 표시 결과 전체에 적용한다.
+                findings의 각 항목과 프로젝트 기억의 필수 종료 문구도 문장·항목 제한에 포함한다.
                 파일 본문 앞의 `줄번호 | 내용` 표기는 실제 원본 줄 번호이므로, 줄을 인용할 때 제공된 번호만 사용한다.
                 줄 번호가 제공되지 않은 파일의 위치를 추측하거나 임의의 줄 번호를 만들지 마라.
                 프로젝트 기억의 명시적 규칙·출력 지시는 최근 대화보다 우선하여 최종 응답에 반영한다.
