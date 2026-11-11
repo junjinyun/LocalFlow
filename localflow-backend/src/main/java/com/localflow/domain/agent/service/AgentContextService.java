@@ -1,6 +1,7 @@
 package com.localflow.domain.agent.service;
 
 import com.localflow.domain.chat.entity.ChatMessage;
+import com.localflow.domain.chat.domain.ChatMessageType;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
 import com.localflow.domain.memory.entity.ProjectMemory;
 import com.localflow.domain.memory.repository.ProjectMemoryRepository;
@@ -30,6 +31,7 @@ public class AgentContextService {
     private static final int MAX_CONTEXT_FILES = 8;
     private static final int MAX_DECOMPOSITION_CONTEXT_CHARS = 16_000;
     private static final int MAX_RECENT_MESSAGES = 8;
+    private static final int MAX_RECENT_SYSTEM_MESSAGES = 2;
     private static final int MAX_RECENT_MESSAGE_CHARS = 600;
     private static final int MAX_RECENT_CONTEXT_CHARS = 4_000;
     private static final int MIN_CONTEXT_SCORE = 10;
@@ -259,11 +261,19 @@ public class AgentContextService {
     private String recentMessages(String projectId) {
         List<ChatMessage> values = chatRepository.findAllByProject_IdOrderByCreatedAtAsc(projectId);
         List<String> lines = new ArrayList<>();
+        Set<String> seenSystemMessages = new HashSet<>();
         int usedChars = 0;
+        int systemMessageCount = 0;
         for (int index = values.size() - 1;
              index >= 0 && lines.size() < MAX_RECENT_MESSAGES;
              index--) {
             ChatMessage message = values.get(index);
+            if (message.getType() == ChatMessageType.SYSTEM) {
+                String key = normalizeSystemMessage(message.getContent());
+                if (systemMessageCount >= MAX_RECENT_SYSTEM_MESSAGES
+                        || !seenSystemMessages.add(key)) continue;
+                systemMessageCount++;
+            }
             String line = "[" + message.getType() + "] "
                     + abbreviate(message.getContent(), MAX_RECENT_MESSAGE_CHARS);
             int remaining = MAX_RECENT_CONTEXT_CHARS - usedChars;
@@ -273,6 +283,10 @@ public class AgentContextService {
             usedChars += line.length() + 1;
         }
         return lines.isEmpty() ? "(없음)" : String.join("\n", lines);
+    }
+
+    private String normalizeSystemMessage(String value) {
+        return value.replaceAll("\\s+", " ").strip().toLowerCase(Locale.ROOT);
     }
 
     private void append(StringBuilder target, String title, String value) {

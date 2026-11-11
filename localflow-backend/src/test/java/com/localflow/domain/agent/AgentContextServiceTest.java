@@ -224,4 +224,32 @@ class AgentContextServiceTest {
         assertThat(decompositionContext).contains("message-11-").doesNotContain("message-0-");
         assertThat(snapshot.files()).hasSize(8);
     }
+
+    @Test
+    void keepsUserConversationButLimitsRepeatedAiCompletionMessages() {
+        Project project = Project.create("sample", null);
+        List<ChatMessage> messages = List.of(
+                ChatMessage.create(project, ChatMessageType.SYSTEM, "[AI 실행 완료] 오래된 결과"),
+                ChatMessage.create(project, ChatMessageType.PROMPT, "첫 번째 사용자 요청"),
+                ChatMessage.create(project, ChatMessageType.SYSTEM, "[AI 실행 완료] 오래된 결과"),
+                ChatMessage.create(project, ChatMessageType.NOTE, "앞으로 공통 응답을 사용한다"),
+                ChatMessage.create(project, ChatMessageType.SYSTEM, "[AI 실행 완료] 반복 결과"),
+                ChatMessage.create(project, ChatMessageType.SYSTEM, "  [AI 실행 완료]   반복 결과  "),
+                ChatMessage.create(project, ChatMessageType.PROMPT, "가장 최근 사용자 요청"),
+                ChatMessage.create(project, ChatMessageType.SYSTEM, "[AI 실행 완료] 최신 결과"));
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of());
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(messages);
+
+        String context = service.buildDecompositionContext(project);
+
+        assertThat(context)
+                .contains("첫 번째 사용자 요청", "앞으로 공통 응답을 사용한다",
+                        "가장 최근 사용자 요청", "반복 결과", "최신 결과")
+                .doesNotContain("오래된 결과");
+        assertThat(context.split("\\[SYSTEM]", -1)).hasSize(3);
+    }
 }
