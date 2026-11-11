@@ -37,6 +37,8 @@ public class ProjectMemoryCandidateService {
     private static final Pattern CANDIDATE_MARKER = Pattern.compile(
             "(앞으로|항상|기억|규칙|원칙|결정|추후|나중에|남은\s*작업|미완료|해야\s*한다|하도록)");
     private static final int MAX_CANDIDATES_PER_SOURCE = 5;
+    private static final int MAX_SOURCE_EXCERPT_LENGTH = 500;
+    private static final String ELLIPSIS = "…";
 
     private final ProjectMemoryCandidateRepository candidateRepository;
     private final ProjectMemoryRepository memoryRepository;
@@ -300,7 +302,8 @@ public class ProjectMemoryCandidateService {
 
     private String excerpt(String content) {
         String cleaned = clean(content);
-        return cleaned.length() > 500 ? cleaned.substring(0, 500) + "…" : cleaned;
+        if (cleaned.length() <= MAX_SOURCE_EXCERPT_LENGTH) return cleaned;
+        return cleaned.substring(0, MAX_SOURCE_EXCERPT_LENGTH - ELLIPSIS.length()) + ELLIPSIS;
     }
 
     private String normalize(String value) {
