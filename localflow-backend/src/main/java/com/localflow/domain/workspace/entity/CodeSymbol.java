@@ -47,6 +47,7 @@ public class CodeSymbol {
     }
 
     public Long getId() { return id; }
+    public String getProjectFileId() { return projectFile.getId(); }
     public String getName() { return name; }
     public SymbolType getType() { return type; }
     public int getLineNumber() { return lineNumber; }
