@@ -14,7 +14,9 @@ import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.DecisionResult;
 import com.localflow.domain.provider.domain.TaskScope;
 import com.localflow.domain.workspace.domain.FileCategory;
+import com.localflow.domain.workspace.entity.CodeSymbol;
 import com.localflow.domain.workspace.entity.ProjectFile;
+import com.localflow.domain.workspace.repository.CodeSymbolRepository;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
 import com.localflow.domain.workspace.service.WorkspaceStorageService;
 import java.util.ArrayList;
@@ -23,7 +25,9 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -35,9 +39,13 @@ public class AgentContextService {
     private static final int MAX_RECENT_MESSAGE_CHARS = 600;
     private static final int MAX_RECENT_CONTEXT_CHARS = 4_000;
     private static final int MIN_CONTEXT_SCORE = 10;
+    private static final int MIN_SYMBOL_NAME_LENGTH = 4;
     private static final Set<String> GENERIC_TERMS = Set.of(
             "json", "web", "code", "file", "files", "코드", "파일", "확인", "현재", "기능");
+    private static final Set<String> GENERIC_SYMBOLS = Set.of(
+            "main", "test", "run", "get", "set", "find", "create", "update", "delete");
     private final ProjectFileRepository fileRepository;
+    private final CodeSymbolRepository symbolRepository;
     private final ProjectMemoryRepository memoryRepository;
     private final ChatMessageRepository chatRepository;
     private final WorkspaceStorageService storageService;
@@ -45,12 +53,14 @@ public class AgentContextService {
     private final ProjectMemoryScopeMatcher memoryScopeMatcher;
 
     public AgentContextService(ProjectFileRepository fileRepository,
+                               CodeSymbolRepository symbolRepository,
                                ProjectMemoryRepository memoryRepository,
                                ChatMessageRepository chatRepository,
                                WorkspaceStorageService storageService,
                                AiProviderProperties properties,
                                ProjectMemoryScopeMatcher memoryScopeMatcher) {
         this.fileRepository = fileRepository;
+        this.symbolRepository = symbolRepository;
         this.memoryRepository = memoryRepository;
         this.chatRepository = chatRepository;
         this.storageService = storageService;
@@ -89,7 +99,10 @@ public class AgentContextService {
         List<String> contextFiles = new ArrayList<>();
         List<String> truncatedFiles = new ArrayList<>();
         List<ExcludedFile> excludedFiles = new ArrayList<>();
-        List<ScoredFile> selectedFiles = includeContents ? select(files, prompt, decision) : List.of();
+        Map<String, List<String>> symbolsByFile = includeContents
+                ? symbolsByFile(project.getId()) : Map.of();
+        List<ScoredFile> selectedFiles = includeContents
+                ? select(files, prompt, decision, symbolsByFile) : List.of();
         List<String> selectedPaths = new ArrayList<>(selectedFiles.stream()
                 .map(value -> value.file().getRelativePath()).toList());
         if (decision.targetPath() != null && !selectedPaths.contains(decision.targetPath())) {
@@ -148,25 +161,28 @@ public class AgentContextService {
         return buildSnapshot(project, prompt, decision, includeContents).content();
     }
 
-    private List<ScoredFile> select(List<ProjectFile> files, String prompt, DecisionResult decision) {
+    private List<ScoredFile> select(List<ProjectFile> files, String prompt, DecisionResult decision,
+                                    Map<String, List<String>> symbolsByFile) {
         List<ProjectFile> readable = files.stream()
                 .filter(file -> file.getCategory() != FileCategory.DOCUMENT).toList();
         List<TaskScope> scopes = decision.taskScopes().isEmpty()
                 ? List.of(new TaskScope(prompt, decision.selectedTags())) : decision.taskScopes();
-        return readable.stream().map(file -> rank(file, prompt, decision, scopes))
+        return readable.stream().map(file -> rank(file, prompt, decision, scopes,
+                        symbolsByFile.getOrDefault(file.getId(), List.of())))
                 .filter(value -> value.score() >= MIN_CONTEXT_SCORE)
                 .sorted(Comparator.comparingInt(ScoredFile::score).reversed()
                         .thenComparing(value -> value.file().getRelativePath()))
                 .limit(MAX_CONTEXT_FILES).toList();
     }
 
-    private ScoredFile rank(ProjectFile file, String prompt, DecisionResult decision, List<TaskScope> scopes) {
+    private ScoredFile rank(ProjectFile file, String prompt, DecisionResult decision,
+                            List<TaskScope> scopes, List<String> symbols) {
         boolean dependencyRequested = dependencyRequested(prompt);
         ScoreDetail best = score(file, tokens(prompt), decision.targetPath(), decision.selectedTags(),
-                dependencyRequested);
+                dependencyRequested, symbols);
         for (TaskScope scope : scopes) {
             ScoreDetail candidate = score(file, tokens(scope.instruction()), decision.targetPath(), scope.tags(),
-                    dependencyRequested || dependencyRequested(scope.instruction()));
+                    dependencyRequested || dependencyRequested(scope.instruction()), symbols);
             if (candidate.score() > best.score()) best = candidate;
         }
         List<String> reasons = best.reasons().isEmpty()
@@ -176,7 +192,8 @@ public class AgentContextService {
     }
 
     private ScoreDetail score(ProjectFile file, Set<String> terms, String targetPath,
-                              List<String> selectedTags, boolean dependencyRequested) {
+                              List<String> selectedTags, boolean dependencyRequested,
+                              List<String> symbols) {
         String path = file.getRelativePath().toLowerCase(Locale.ROOT);
         int score = 0;
         List<String> reasons = new ArrayList<>();
@@ -194,6 +211,14 @@ public class AgentContextService {
             score += matchedTerms.size() * 10;
             reasons.add("요청 키워드가 경로에 포함: " + String.join(", ", matchedTerms));
         }
+        List<String> matchedSymbols = symbols.stream()
+                .filter(this::eligibleSymbol)
+                .filter(symbol -> terms.stream().anyMatch(term -> matchesSymbol(term, symbol)))
+                .distinct().sorted().toList();
+        if (!matchedSymbols.isEmpty()) {
+            score += matchedSymbols.size() * 30;
+            reasons.add("요청에 코드 심볼 일치: " + String.join(", ", matchedSymbols));
+        }
         if (path.endsWith("readme.md")) {
             score += 2;
             reasons.add("프로젝트 안내 파일");
@@ -208,6 +233,23 @@ public class AgentContextService {
             }
         }
         return new ScoreDetail(score, List.copyOf(reasons));
+    }
+
+    private Map<String, List<String>> symbolsByFile(String projectId) {
+        return symbolRepository.findAllByProjectId(projectId).stream()
+                .collect(Collectors.groupingBy(CodeSymbol::getProjectFileId,
+                        Collectors.mapping(CodeSymbol::getName, Collectors.toList())));
+    }
+
+    private boolean eligibleSymbol(String symbol) {
+        String normalized = symbol.toLowerCase(Locale.ROOT);
+        return normalized.length() >= MIN_SYMBOL_NAME_LENGTH && !GENERIC_SYMBOLS.contains(normalized);
+    }
+
+    private boolean matchesSymbol(String term, String symbol) {
+        String normalized = symbol.toLowerCase(Locale.ROOT);
+        return term.equals(normalized)
+                || (normalized.length() >= 6 && term.contains(normalized));
     }
 
     private String taskDescription(List<TaskScope> scopes) {

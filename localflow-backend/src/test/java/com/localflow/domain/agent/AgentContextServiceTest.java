@@ -1,7 +1,9 @@
 package com.localflow.domain.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.localflow.domain.agent.service.AgentContextService;
@@ -14,23 +16,33 @@ import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.DecisionResult;
 import com.localflow.domain.workspace.domain.FileCategory;
+import com.localflow.domain.workspace.domain.SymbolType;
+import com.localflow.domain.workspace.entity.CodeSymbol;
 import com.localflow.domain.workspace.entity.ProjectFile;
+import com.localflow.domain.workspace.repository.CodeSymbolRepository;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
 import com.localflow.domain.workspace.service.WorkspaceStorageService;
 import java.util.List;
 import java.util.ArrayList;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class AgentContextServiceTest {
     private final ProjectFileRepository fileRepository = mock(ProjectFileRepository.class);
+    private final CodeSymbolRepository symbolRepository = mock(CodeSymbolRepository.class);
     private final ProjectMemoryRepository memoryRepository = mock(ProjectMemoryRepository.class);
     private final ChatMessageRepository chatRepository = mock(ChatMessageRepository.class);
     private final WorkspaceStorageService storageService = mock(WorkspaceStorageService.class);
     private final AiProviderProperties properties = new AiProviderProperties(
             32_000, 20, null, null, null, null);
     private final AgentContextService service = new AgentContextService(
-            fileRepository, memoryRepository, chatRepository, storageService, properties,
+            fileRepository, symbolRepository, memoryRepository, chatRepository, storageService, properties,
             new ProjectMemoryScopeMatcher());
+
+    @BeforeEach
+    void setUp() {
+        when(symbolRepository.findAllByProjectId(anyString())).thenReturn(List.of());
+    }
 
     @Test
     void reportsOnlyFilesWhoseContentsAreIncludedInTheGenerationContext() {
@@ -188,6 +200,59 @@ class AgentContextServiceTest {
 
         assertThat(jwtSnapshot.files()).contains(jwt.getRelativePath()).doesNotContain(lock.getRelativePath());
         assertThat(dependencySnapshot.files()).contains(lock.getRelativePath());
+    }
+
+    @Test
+    void selectsFileByIndexedCodeSymbolAndRecordsMatchedSymbol() {
+        Project project = Project.create("sample", null);
+        ProjectFile tokenCoordinator = ProjectFile.create(project,
+                "src/security/TokenCoordinator.java", "TokenCoordinator.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-token");
+        ProjectFile profile = ProjectFile.create(project,
+                "src/user/ProfileService.java", "ProfileService.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-profile");
+        CodeSymbol rotateMethod = new CodeSymbol(tokenCoordinator,
+                "rotateRefreshToken", SymbolType.METHOD, 42);
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of(profile, tokenCoordinator));
+        when(symbolRepository.findAllByProjectId(project.getId())).thenReturn(List.of(rotateMethod));
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of());
+        when(storageService.readText(project.getId(), tokenCoordinator.getRelativePath()))
+                .thenReturn("void rotateRefreshToken() {}");
+
+        var snapshot = service.buildSnapshot(project, "rotateRefreshToken 호출 흐름을 확인해줘",
+                DecisionResult.fallback("INSPECT_FILES", null, List.of(), "LOW", false), true);
+
+        assertThat(snapshot.files()).containsExactly(tokenCoordinator.getRelativePath());
+        assertThat(snapshot.fileSelections().get(0).reasons())
+                .contains("요청에 코드 심볼 일치: rotateRefreshToken");
+        verify(symbolRepository).findAllByProjectId(project.getId());
+    }
+
+    @Test
+    void ignoresShortAndGenericCodeSymbolsDuringFileSelection() {
+        Project project = Project.create("sample", null);
+        ProjectFile utility = ProjectFile.create(project,
+                "src/common/Utility.java", "Utility.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-utility");
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of(utility));
+        when(symbolRepository.findAllByProjectId(project.getId())).thenReturn(List.of(
+                new CodeSymbol(utility, "run", SymbolType.METHOD, 10),
+                new CodeSymbol(utility, "create", SymbolType.METHOD, 20)));
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of());
+
+        var snapshot = service.buildSnapshot(project, "run create 호출을 확인해줘",
+                DecisionResult.fallback("INSPECT_FILES", null, List.of(), "LOW", false), true);
+
+        assertThat(snapshot.files()).isEmpty();
+        assertThat(snapshot.fileSelections()).isEmpty();
     }
 
     @Test
