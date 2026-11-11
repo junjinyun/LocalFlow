@@ -14,7 +14,8 @@ class AgentPromptPolicyTest {
                 "프로젝트 맥락:\n[PROJECT_RULE] 마지막에 확인 문구 포함", original);
 
         assertThat(result)
-                .contains("## 최종 응답 직전 필수 확인", "관련 프로젝트 기억", "필수 포함 문구")
+                .contains("## 최종 응답 직전 필수 확인", "관련 프로젝트 기억", "필수 포함 문구",
+                        "## 응답 형식 계약", "최대 5문장", "findings 각 항목")
                 .endsWith(original);
         assertThat(result.lastIndexOf(original))
                 .isGreaterThan(result.indexOf("프로젝트 맥락"));
