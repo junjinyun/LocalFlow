@@ -1,6 +1,6 @@
 import type {
   AgentRun, AgentRunProgress, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileAnalysis, FileContent, FileSyncResult,
-  MemoryCandidate, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, ProjectValidationPreview,
+  MemoryCandidate, MemoryCandidateExtractionHistory, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, ProjectValidationPreview,
   Provider, ProviderType, ValidationCommandResult,
 } from './types'
 
@@ -132,6 +132,8 @@ export const api = {
     ),
     extract: (projectId: string) => request<MemoryCandidate[]>(
       `/api/projects/${projectId}/memory-candidates/extract`, { method: 'POST' }),
+    extractionHistory: (projectId: string) => request<MemoryCandidateExtractionHistory[]>(
+      `/api/projects/${projectId}/memory-candidates/extractions`),
     approve: (projectId: string, candidateId: string, candidate: Pick<MemoryCandidate,
       'type' | 'title' | 'content' | 'globalScope' | 'scopeTags' | 'scopeFilePatterns' | 'scopeTaskTypes'>) =>
       request<ProjectMemory>(`/api/projects/${projectId}/memory-candidates/${candidateId}/approve`, {
