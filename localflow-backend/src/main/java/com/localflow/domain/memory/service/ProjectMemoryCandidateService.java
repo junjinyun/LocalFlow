@@ -96,6 +96,23 @@ public class ProjectMemoryCandidateService {
     }
 
     @Transactional
+    public List<MemoryCandidateResponse> extractSource(String projectId,
+                                                       MemoryCandidateSourceType sourceType,
+                                                       String sourceId,
+                                                       String content) {
+        Project project = projectService.requireProject(projectId);
+        if (content == null || content.isBlank()) return List.of();
+        List<ProjectMemory> memories = memoryRepository
+                .findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(projectId);
+        List<ProjectMemoryCandidate> knownCandidates = new ArrayList<>(
+                candidateRepository.findAllByProject_IdAndStatusOrderByCreatedAtDesc(
+                        projectId, MemoryCandidateStatus.PENDING));
+        List<ProjectMemoryCandidate> created = extractFrom(project, sourceType, sourceId,
+                content, memories, knownCandidates);
+        return candidateRepository.saveAll(created).stream().map(this::response).toList();
+    }
+
+    @Transactional
     public ProjectMemoryResponse approve(String projectId, String candidateId,
                                          MemoryCandidateApproveRequest request) {
         ProjectMemoryCandidate candidate = requireCandidate(projectId, candidateId);

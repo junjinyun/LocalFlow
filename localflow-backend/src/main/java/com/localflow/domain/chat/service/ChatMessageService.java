@@ -8,9 +8,12 @@ import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.project.service.ProjectService;
 import com.localflow.domain.agent.entity.AgentRun;
 import com.localflow.domain.agent.repository.AgentRunRepository;
+import com.localflow.domain.memory.domain.MemoryCandidateExtractionRequestedEvent;
+import com.localflow.domain.memory.domain.MemoryCandidateSourceType;
 import com.localflow.global.error.CustomException;
 import com.localflow.global.error.ErrorCode;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,19 +23,30 @@ public class ChatMessageService {
     private final ChatMessageRepository repository;
     private final ProjectService projectService;
     private final AgentRunRepository runRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ChatMessageService(ChatMessageRepository repository, ProjectService projectService,
-                              AgentRunRepository runRepository) {
+                              AgentRunRepository runRepository,
+                              ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.projectService = projectService;
         this.runRepository = runRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public ChatMessageResponse create(String projectId, ChatMessageCreateRequest request) {
         Project project = projectService.requireProject(projectId);
         ChatMessage message = ChatMessage.create(project, request.type(), request.content().strip());
-        return ChatMessageResponse.from(repository.save(message), null);
+        ChatMessage saved = repository.save(message);
+        if (saved.getType() == com.localflow.domain.chat.domain.ChatMessageType.PROMPT
+                || saved.getType() == com.localflow.domain.chat.domain.ChatMessageType.NOTE
+                || saved.getType() == com.localflow.domain.chat.domain.ChatMessageType.HANDOFF) {
+            eventPublisher.publishEvent(new MemoryCandidateExtractionRequestedEvent(
+                    projectId, MemoryCandidateSourceType.CHAT_MESSAGE,
+                    saved.getId(), saved.getContent()));
+        }
+        return ChatMessageResponse.from(saved, null);
     }
 
     public List<ChatMessageResponse> findAll(String projectId) {
