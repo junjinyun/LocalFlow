@@ -22,6 +22,7 @@ import com.localflow.domain.agent.repository.AgentRunRepository;
 import com.localflow.domain.chat.domain.ChatMessageType;
 import com.localflow.domain.chat.entity.ChatMessage;
 import com.localflow.domain.chat.repository.ChatMessageRepository;
+import com.localflow.domain.memory.service.AgentMemoryCandidatePublisher;
 import com.localflow.domain.project.entity.PermissionPolicy;
 import com.localflow.domain.project.entity.PrivacyMode;
 import com.localflow.domain.project.entity.ProjectSettings;
@@ -78,6 +79,7 @@ public class AgentExecutionService {
     private final AgentFileChangeTransactionService fileChangeTransactionService;
     private final WorkspaceStorageService storageService;
     private final ChatMessageRepository chatRepository;
+    private final AgentMemoryCandidatePublisher memoryCandidatePublisher;
     private final AgentRunProgressService progressService;
     private final AgentRunCancellationService cancellationService;
     private final ObjectMapper objectMapper;
@@ -102,6 +104,7 @@ public class AgentExecutionService {
                                  AgentFileChangeTransactionService fileChangeTransactionService,
                                  WorkspaceStorageService storageService,
                                  ChatMessageRepository chatRepository,
+                                 AgentMemoryCandidatePublisher memoryCandidatePublisher,
                                  AgentRunProgressService progressService,
                                  AgentRunCancellationService cancellationService,
                                  ObjectMapper objectMapper,
@@ -125,6 +128,7 @@ public class AgentExecutionService {
         this.fileChangeTransactionService = fileChangeTransactionService;
         this.storageService = storageService;
         this.chatRepository = chatRepository;
+        this.memoryCandidatePublisher = memoryCandidatePublisher;
         this.progressService = progressService;
         this.cancellationService = cancellationService;
         this.objectMapper = objectMapper;
@@ -844,6 +848,7 @@ public class AgentExecutionService {
     private void addSystemMessage(AgentRun run, String message) {
         chatRepository.save(ChatMessage.create(run.getProject(), ChatMessageType.SYSTEM,
                 "[AI 실행 완료] " + message));
+        memoryCandidatePublisher.request(run);
     }
 
     private boolean isInspection(DecisionResult decision) {
