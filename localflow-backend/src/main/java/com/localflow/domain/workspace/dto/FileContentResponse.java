@@ -5,6 +5,7 @@ import java.util.List;
 public record FileContentResponse(
         ProjectFileResponse file,
         String content,
-        List<CodeSymbolResponse> symbols
+        List<CodeSymbolResponse> symbols,
+        List<CodeReferenceResponse> references
 ) {
 }

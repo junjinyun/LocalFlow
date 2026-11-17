@@ -14,14 +14,17 @@ import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.DecisionResult;
 import com.localflow.domain.provider.domain.TaskScope;
 import com.localflow.domain.workspace.domain.FileCategory;
+import com.localflow.domain.workspace.entity.CodeReference;
 import com.localflow.domain.workspace.entity.CodeSymbol;
 import com.localflow.domain.workspace.entity.ProjectFile;
+import com.localflow.domain.workspace.repository.CodeReferenceRepository;
 import com.localflow.domain.workspace.repository.CodeSymbolRepository;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
 import com.localflow.domain.workspace.service.WorkspaceStorageService;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +49,7 @@ public class AgentContextService {
             "main", "test", "run", "get", "set", "find", "create", "update", "delete");
     private final ProjectFileRepository fileRepository;
     private final CodeSymbolRepository symbolRepository;
+    private final CodeReferenceRepository referenceRepository;
     private final ProjectMemoryRepository memoryRepository;
     private final ChatMessageRepository chatRepository;
     private final WorkspaceStorageService storageService;
@@ -54,6 +58,7 @@ public class AgentContextService {
 
     public AgentContextService(ProjectFileRepository fileRepository,
                                CodeSymbolRepository symbolRepository,
+                               CodeReferenceRepository referenceRepository,
                                ProjectMemoryRepository memoryRepository,
                                ChatMessageRepository chatRepository,
                                WorkspaceStorageService storageService,
@@ -61,6 +66,7 @@ public class AgentContextService {
                                ProjectMemoryScopeMatcher memoryScopeMatcher) {
         this.fileRepository = fileRepository;
         this.symbolRepository = symbolRepository;
+        this.referenceRepository = referenceRepository;
         this.memoryRepository = memoryRepository;
         this.chatRepository = chatRepository;
         this.storageService = storageService;
@@ -99,10 +105,10 @@ public class AgentContextService {
         List<String> contextFiles = new ArrayList<>();
         List<String> truncatedFiles = new ArrayList<>();
         List<ExcludedFile> excludedFiles = new ArrayList<>();
-        Map<String, List<String>> symbolsByFile = includeContents
-                ? symbolsByFile(project.getId()) : Map.of();
+        ContextIndex contextIndex = includeContents
+                ? contextIndex(project.getId(), files) : ContextIndex.empty();
         List<ScoredFile> selectedFiles = includeContents
-                ? select(files, prompt, decision, symbolsByFile) : List.of();
+                ? select(files, prompt, decision, contextIndex) : List.of();
         List<String> selectedPaths = new ArrayList<>(selectedFiles.stream()
                 .map(value -> value.file().getRelativePath()).toList());
         if (decision.targetPath() != null && !selectedPaths.contains(decision.targetPath())) {
@@ -162,17 +168,45 @@ public class AgentContextService {
     }
 
     private List<ScoredFile> select(List<ProjectFile> files, String prompt, DecisionResult decision,
-                                    Map<String, List<String>> symbolsByFile) {
+                                    ContextIndex contextIndex) {
         List<ProjectFile> readable = files.stream()
                 .filter(file -> file.getCategory() != FileCategory.DOCUMENT).toList();
+        Map<String, ProjectFile> readableById = readable.stream()
+                .collect(Collectors.toMap(ProjectFile::getId, file -> file));
         List<TaskScope> scopes = decision.taskScopes().isEmpty()
                 ? List.of(new TaskScope(prompt, decision.selectedTags())) : decision.taskScopes();
-        return readable.stream().map(file -> rank(file, prompt, decision, scopes,
-                        symbolsByFile.getOrDefault(file.getId(), List.of())))
+        List<ScoredFile> primary = readable.stream().map(file -> rank(file, prompt, decision, scopes,
+                        contextIndex.symbolsByFile().getOrDefault(file.getId(), List.of())))
                 .filter(value -> value.score() >= MIN_CONTEXT_SCORE)
                 .sorted(Comparator.comparingInt(ScoredFile::score).reversed()
                         .thenComparing(value -> value.file().getRelativePath()))
+                .toList();
+        Map<String, ScoredFile> candidates = new LinkedHashMap<>();
+        primary.forEach(value -> candidates.put(value.file().getId(), value));
+        for (ScoredFile selected : primary) {
+            for (ImportRelation relation : contextIndex.relationsByFile()
+                    .getOrDefault(selected.file().getId(), List.of())) {
+                ProjectFile related = readableById.get(relation.fileId());
+                if (related == null) continue;
+                int relationScore = Math.max(MIN_CONTEXT_SCORE, Math.min(40, selected.score() / 2));
+                ScoredFile relationCandidate = new ScoredFile(related, relationScore,
+                        new FileSelection(related.getRelativePath(), relationScore,
+                                List.of(relation.reason())));
+                candidates.merge(related.getId(), relationCandidate, this::mergeSelection);
+            }
+        }
+        return candidates.values().stream()
+                .sorted(Comparator.comparingInt(ScoredFile::score).reversed()
+                        .thenComparing(value -> value.file().getRelativePath()))
                 .limit(MAX_CONTEXT_FILES).toList();
+    }
+
+    private ScoredFile mergeSelection(ScoredFile existing, ScoredFile added) {
+        Set<String> reasons = new LinkedHashSet<>(existing.selection().reasons());
+        reasons.addAll(added.selection().reasons());
+        int score = Math.max(existing.score(), added.score());
+        return new ScoredFile(existing.file(), score,
+                new FileSelection(existing.file().getRelativePath(), score, List.copyOf(reasons)));
     }
 
     private ScoredFile rank(ProjectFile file, String prompt, DecisionResult decision,
@@ -235,10 +269,76 @@ public class AgentContextService {
         return new ScoreDetail(score, List.copyOf(reasons));
     }
 
-    private Map<String, List<String>> symbolsByFile(String projectId) {
-        return symbolRepository.findAllByProjectId(projectId).stream()
+    private ContextIndex contextIndex(String projectId, List<ProjectFile> files) {
+        Map<String, List<String>> symbolsByFile = symbolRepository.findAllByProjectId(projectId).stream()
                 .collect(Collectors.groupingBy(CodeSymbol::getProjectFileId,
                         Collectors.mapping(CodeSymbol::getName, Collectors.toList())));
+        Map<String, List<ImportRelation>> relations = new LinkedHashMap<>();
+        for (CodeReference reference : referenceRepository.findAllByProjectId(projectId)) {
+            for (ProjectFile target : resolveImport(reference, files)) {
+                if (target.getId().equals(reference.getSourceFileId())) continue;
+                addRelation(relations, reference.getSourceFileId(), target.getId(),
+                        "import 직접 의존: " + target.getRelativePath());
+                addRelation(relations, target.getId(), reference.getSourceFileId(),
+                        "import 사용 파일: " + reference.getSourceFilePath());
+            }
+        }
+        return new ContextIndex(symbolsByFile, relations);
+    }
+
+    private List<ProjectFile> resolveImport(CodeReference reference, List<ProjectFile> files) {
+        String target = reference.getTarget().toLowerCase(Locale.ROOT).replace('\\', '/');
+        String sourcePath = reference.getSourceFilePath().replace('\\', '/');
+        if (target.startsWith(".")) {
+            String parent = sourcePath.contains("/")
+                    ? sourcePath.substring(0, sourcePath.lastIndexOf('/') + 1) : "";
+            String resolved = normalizePath(parent + target);
+            return files.stream().filter(file -> matchesPathTarget(file, resolved)).toList();
+        }
+        String normalized = target.startsWith("@/") ? target.substring(2)
+                : target.replace('.', '/');
+        while (!normalized.isBlank()) {
+            String candidate = normalized;
+            List<ProjectFile> matched = files.stream()
+                    .filter(file -> matchesPathTarget(file, candidate)).toList();
+            if (!matched.isEmpty()) return matched;
+            int separator = normalized.lastIndexOf('/');
+            if (separator < 0) break;
+            normalized = normalized.substring(0, separator);
+        }
+        if (target.contains("/") || target.contains(".")) return List.of();
+        return files.stream().filter(file -> fileStem(file.getRelativePath()).equals(target)).toList();
+    }
+
+    private boolean matchesPathTarget(ProjectFile file, String target) {
+        String stem = fileStem(file.getRelativePath());
+        return stem.equals(target) || stem.endsWith("/" + target)
+                || stem.endsWith("/" + target + "/index");
+    }
+
+    private String fileStem(String path) {
+        String normalized = path.toLowerCase(Locale.ROOT).replace('\\', '/');
+        int dot = normalized.lastIndexOf('.');
+        return dot > normalized.lastIndexOf('/') ? normalized.substring(0, dot) : normalized;
+    }
+
+    private String normalizePath(String path) {
+        List<String> parts = new ArrayList<>();
+        for (String part : path.split("/")) {
+            if (part.isBlank() || ".".equals(part)) continue;
+            if ("..".equals(part)) {
+                if (!parts.isEmpty()) parts.remove(parts.size() - 1);
+            } else {
+                parts.add(part);
+            }
+        }
+        return String.join("/", parts);
+    }
+
+    private void addRelation(Map<String, List<ImportRelation>> relations, String sourceId,
+                             String targetId, String reason) {
+        relations.computeIfAbsent(sourceId, ignored -> new ArrayList<>())
+                .add(new ImportRelation(targetId, reason));
     }
 
     private boolean eligibleSymbol(String symbol) {
@@ -370,4 +470,9 @@ public class AgentContextService {
 
     private record ScoreDetail(int score, List<String> reasons) { }
     private record ScoredFile(ProjectFile file, int score, FileSelection selection) { }
+    private record ImportRelation(String fileId, String reason) { }
+    private record ContextIndex(Map<String, List<String>> symbolsByFile,
+                                Map<String, List<ImportRelation>> relationsByFile) {
+        static ContextIndex empty() { return new ContextIndex(Map.of(), Map.of()); }
+    }
 }

@@ -16,9 +16,12 @@ import com.localflow.domain.project.entity.Project;
 import com.localflow.domain.provider.config.AiProviderProperties;
 import com.localflow.domain.provider.domain.DecisionResult;
 import com.localflow.domain.workspace.domain.FileCategory;
+import com.localflow.domain.workspace.domain.CodeReferenceType;
 import com.localflow.domain.workspace.domain.SymbolType;
+import com.localflow.domain.workspace.entity.CodeReference;
 import com.localflow.domain.workspace.entity.CodeSymbol;
 import com.localflow.domain.workspace.entity.ProjectFile;
+import com.localflow.domain.workspace.repository.CodeReferenceRepository;
 import com.localflow.domain.workspace.repository.CodeSymbolRepository;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
 import com.localflow.domain.workspace.service.WorkspaceStorageService;
@@ -30,18 +33,21 @@ import org.junit.jupiter.api.Test;
 class AgentContextServiceTest {
     private final ProjectFileRepository fileRepository = mock(ProjectFileRepository.class);
     private final CodeSymbolRepository symbolRepository = mock(CodeSymbolRepository.class);
+    private final CodeReferenceRepository referenceRepository = mock(CodeReferenceRepository.class);
     private final ProjectMemoryRepository memoryRepository = mock(ProjectMemoryRepository.class);
     private final ChatMessageRepository chatRepository = mock(ChatMessageRepository.class);
     private final WorkspaceStorageService storageService = mock(WorkspaceStorageService.class);
     private final AiProviderProperties properties = new AiProviderProperties(
             32_000, 20, null, null, null, null);
     private final AgentContextService service = new AgentContextService(
-            fileRepository, symbolRepository, memoryRepository, chatRepository, storageService, properties,
+            fileRepository, symbolRepository, referenceRepository, memoryRepository,
+            chatRepository, storageService, properties,
             new ProjectMemoryScopeMatcher());
 
     @BeforeEach
     void setUp() {
         when(symbolRepository.findAllByProjectId(anyString())).thenReturn(List.of());
+        when(referenceRepository.findAllByProjectId(anyString())).thenReturn(List.of());
     }
 
     @Test
@@ -253,6 +259,53 @@ class AgentContextServiceTest {
 
         assertThat(snapshot.files()).isEmpty();
         assertThat(snapshot.fileSelections()).isEmpty();
+    }
+
+    @Test
+    void expandsSelectedFileToDirectImportDependencyAndConsumer() {
+        Project project = Project.create("sample", null);
+        ProjectFile controller = ProjectFile.create(project,
+                "src/main/java/sample/AuthController.java", "AuthController.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-controller");
+        ProjectFile serviceFile = ProjectFile.create(project,
+                "src/main/java/sample/UserService.java", "UserService.java",
+                "java", FileCategory.SOURCE_CODE, "java", 20, "hash-service");
+        when(fileRepository.findAllByProject_IdOrderByRelativePath(project.getId()))
+                .thenReturn(List.of(controller, serviceFile));
+        when(symbolRepository.findAllByProjectId(project.getId())).thenReturn(List.of(
+                new CodeSymbol(controller, "AuthController", SymbolType.CLASS, 3),
+                new CodeSymbol(serviceFile, "UserService", SymbolType.CLASS, 3)));
+        when(referenceRepository.findAllByProjectId(project.getId())).thenReturn(List.of(
+                new CodeReference(controller, CodeReferenceType.IMPORT,
+                        "sample.UserService", 2)));
+        when(memoryRepository.findAllByProject_IdAndActiveTrueOrderByUpdatedAtDesc(project.getId()))
+                .thenReturn(List.of());
+        when(chatRepository.findAllByProject_IdOrderByCreatedAtAsc(project.getId()))
+                .thenReturn(List.of());
+        when(storageService.readText(project.getId(), controller.getRelativePath()))
+                .thenReturn("class AuthController {}");
+        when(storageService.readText(project.getId(), serviceFile.getRelativePath()))
+                .thenReturn("class UserService {}");
+
+        var dependencySnapshot = service.buildSnapshot(project, "AuthController 구조 확인",
+                DecisionResult.fallback("INSPECT_FILES", controller.getRelativePath(),
+                        List.of(), "LOW", false), true);
+        var consumerSnapshot = service.buildSnapshot(project, "UserService 구조 확인",
+                DecisionResult.fallback("INSPECT_FILES", serviceFile.getRelativePath(),
+                        List.of(), "LOW", false), true);
+
+        assertThat(dependencySnapshot.files())
+                .contains(controller.getRelativePath(), serviceFile.getRelativePath());
+        assertThat(dependencySnapshot.fileSelections().stream()
+                .filter(selection -> selection.path().equals(serviceFile.getRelativePath()))
+                .flatMap(selection -> selection.reasons().stream()))
+                .contains("import 직접 의존: " + serviceFile.getRelativePath());
+        assertThat(consumerSnapshot.files())
+                .contains(serviceFile.getRelativePath(), controller.getRelativePath());
+        assertThat(consumerSnapshot.fileSelections().stream()
+                .filter(selection -> selection.path().equals(controller.getRelativePath()))
+                .flatMap(selection -> selection.reasons().stream()))
+                .contains("import 사용 파일: " + controller.getRelativePath());
     }
 
     @Test

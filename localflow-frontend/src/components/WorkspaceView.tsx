@@ -734,6 +734,8 @@ export default function WorkspaceView({ project, onProjectRefresh, notify }: Pro
                   <dl><dt>언어</dt><dd>{selected.language || selected.category}</dd><dt>크기</dt><dd>{formatBytes(selected.sizeBytes)}</dd><dt>해시</dt><dd title={selected.sha256}>{selected.sha256.slice(0, 10)}…</dd></dl>
                   <h4>심볼 {fileContent?.symbols.length ?? 0}</h4>
                   {fileContent?.symbols.map(symbol => <button key={symbol.id} onClick={() => goToLine(symbol.lineNumber)}><Code2 size={13} /><span>{symbol.name}</span><small>L{symbol.lineNumber}</small></button>)}
+                  <h4>Import {fileContent?.references.length ?? 0}</h4>
+                  {fileContent?.references.map(reference => <button key={`reference-${reference.id}`} onClick={() => goToLine(reference.lineNumber)} title={reference.target}><GitCompareArrows size={13} /><span>{reference.target}</span><small>L{reference.lineNumber}</small></button>)}
                 </aside>
               </div>
             )}

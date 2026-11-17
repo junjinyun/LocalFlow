@@ -17,12 +17,14 @@ public record FileAnalysisResponse(
         Set<String> userAddedTags,
         Set<String> userExcludedTags,
         List<CodeSymbolResponse> symbols,
+        List<CodeReferenceResponse> references,
         Instant analyzedAt
 ) {
-    public static FileAnalysisResponse from(ProjectFile file, List<CodeSymbolResponse> symbols) {
+    public static FileAnalysisResponse from(ProjectFile file, List<CodeSymbolResponse> symbols,
+                                            List<CodeReferenceResponse> references) {
         return new FileAnalysisResponse(ProjectFileResponse.from(file), file.getAnalysisStatus(),
                 file.getAnalysisRole(), file.getAnalysisSummary(), file.getAnalysisMessage(),
                 file.getAutomaticTags(), file.getTags(), file.getUserAddedTags(),
-                file.getUserExcludedTags(), symbols, file.getAnalyzedAt());
+                file.getUserExcludedTags(), symbols, references, file.getAnalyzedAt());
     }
 }

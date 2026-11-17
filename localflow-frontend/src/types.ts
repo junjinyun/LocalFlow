@@ -46,7 +46,13 @@ export type ProjectFile = {
 }
 
 export type CodeSymbol = { id: number; name: string; type: string; lineNumber: number }
-export type FileContent = { file: ProjectFile; content: string; symbols: CodeSymbol[] }
+export type CodeReference = { id: number; type: 'IMPORT'; target: string; lineNumber: number }
+export type FileContent = {
+  file: ProjectFile
+  content: string
+  symbols: CodeSymbol[]
+  references: CodeReference[]
+}
 export type FileAnalysis = {
   file: ProjectFile
   status: 'PENDING' | 'ANALYZED' | 'NO_SYMBOLS' | 'UNSUPPORTED_CONTENT' | 'FAILED'
@@ -58,6 +64,7 @@ export type FileAnalysis = {
   userAddedTags: string[]
   userExcludedTags: string[]
   symbols: CodeSymbol[]
+  references: CodeReference[]
   analyzedAt: string | null
 }
 export type FileSyncItem = {

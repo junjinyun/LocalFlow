@@ -1,10 +1,13 @@
 package com.localflow.domain.workspace.service;
 
 import com.localflow.domain.workspace.domain.SymbolType;
+import com.localflow.domain.workspace.domain.CodeReferenceType;
 import com.localflow.domain.workspace.domain.FileAnalysisStatus;
 import com.localflow.domain.workspace.domain.FileCategory;
+import com.localflow.domain.workspace.entity.CodeReference;
 import com.localflow.domain.workspace.entity.CodeSymbol;
 import com.localflow.domain.workspace.entity.ProjectFile;
+import com.localflow.domain.workspace.repository.CodeReferenceRepository;
 import com.localflow.domain.workspace.repository.CodeSymbolRepository;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -26,15 +29,31 @@ public class SourceIndexService {
     private static final Pattern JAVA_METHOD = Pattern.compile("(?:public|protected|private|static|final|synchronized|abstract|native|\\s)+[\\w<>\\[\\], ?]+\\s+([A-Za-z_$][\\w$]*)\\s*\\([^;]*\\)\\s*(?:throws [^{]+)?\\{");
     private static final Pattern PYTHON_SYMBOL = Pattern.compile("^\\s*(class|def|async\\s+def)\\s+([A-Za-z_][\\w]*)");
     private static final Pattern JS_FUNCTION = Pattern.compile("\\b(?:async\\s+)?function\\s+([A-Za-z_$][\\w$]*)|\\bclass\\s+([A-Za-z_$][\\w$]*)|\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:async\\s*)?\\([^)]*\\)\\s*=>");
+    private static final Pattern JAVA_IMPORT = Pattern.compile(
+            "^\\s*import\\s+(?:static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;?");
+    private static final Pattern PYTHON_FROM_IMPORT = Pattern.compile(
+            "^\\s*from\\s+([A-Za-z_][\\w.]*)\\s+import\\s+(.+)$");
+    private static final Pattern PYTHON_IMPORT = Pattern.compile(
+            "^\\s*import\\s+([A-Za-z_][\\w.]*)");
+    private static final Pattern JS_IMPORT_FROM = Pattern.compile(
+            "\\b(?:import|export)\\b[^'\"]*\\bfrom\\s*['\"]([^'\"]+)['\"]");
+    private static final Pattern JS_DIRECT_IMPORT = Pattern.compile(
+            "^\\s*import\\s*['\"]([^'\"]+)['\"]");
+    private static final Pattern JS_REQUIRE = Pattern.compile(
+            "\\brequire\\s*\\(\\s*['\"]([^'\"]+)['\"]\\s*\\)");
 
     private final CodeSymbolRepository symbolRepository;
+    private final CodeReferenceRepository referenceRepository;
 
-    public SourceIndexService(CodeSymbolRepository symbolRepository) {
+    public SourceIndexService(CodeSymbolRepository symbolRepository,
+                              CodeReferenceRepository referenceRepository) {
         this.symbolRepository = symbolRepository;
+        this.referenceRepository = referenceRepository;
     }
 
     public int reindex(ProjectFile projectFile, Path path) {
         symbolRepository.deleteAllByProjectFile_Id(projectFile.getId());
+        referenceRepository.deleteAllBySourceFile_Id(projectFile.getId());
         try {
             projectFile.replaceTags(extractTags(projectFile, path));
             if (projectFile.getCategory() == FileCategory.DOCUMENT) {
@@ -49,9 +68,11 @@ public class SourceIndexService {
                 return 0;
             }
             List<CodeSymbol> symbols = extract(projectFile, path);
+            List<CodeReference> references = extractReferences(projectFile, path);
             symbolRepository.saveAll(symbols);
+            referenceRepository.saveAll(references);
             projectFile.recordAnalysis(symbols.isEmpty() ? FileAnalysisStatus.NO_SYMBOLS : FileAnalysisStatus.ANALYZED,
-                    role(projectFile), summary(projectFile, symbols),
+                    role(projectFile), summary(projectFile, symbols, references),
                     symbols.isEmpty() ? "인식된 코드 심볼이 없습니다." : null);
             return symbols.size();
         } catch (RuntimeException exception) {
@@ -77,10 +98,17 @@ public class SourceIndexService {
     }
 
     private String summary(ProjectFile file, List<CodeSymbol> symbols) {
+        return summary(file, symbols, List.of());
+    }
+
+    private String summary(ProjectFile file, List<CodeSymbol> symbols,
+                           List<CodeReference> references) {
         String kind = file.getLanguage() == null ? file.getCategory().name() : file.getLanguage();
         if (symbols.isEmpty()) return kind + " 파일이며 자동 태그 " + file.getTags().size() + "개를 식별했습니다.";
         String names = symbols.stream().limit(5).map(CodeSymbol::getName).reduce((a, b) -> a + ", " + b).orElse("");
-        return kind + " 파일에서 코드 심볼 " + symbols.size() + "개(" + names + ")를 식별했습니다.";
+        String importSummary = references.isEmpty() ? "" : " import " + references.size() + "개와";
+        return kind + " 파일에서" + importSummary + " 코드 심볼 "
+                + symbols.size() + "개(" + names + ")를 식별했습니다.";
     }
 
     private Set<String> extractTags(ProjectFile file, Path path) {
@@ -153,6 +181,73 @@ public class SourceIndexService {
             return symbols;
         } catch (IOException exception) {
             throw new IllegalStateException("코드 심볼을 분석하지 못했습니다.", exception);
+        }
+    }
+
+    private List<CodeReference> extractReferences(ProjectFile file, Path path) {
+        List<CodeReference> references = new ArrayList<>();
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            String line;
+            int lineNumber = 0;
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                switch (file.getLanguage()) {
+                    case "Java", "Kotlin", "C#" -> extractJavaImport(file, line, lineNumber, references);
+                    case "Python" -> extractPythonImport(file, line, lineNumber, references);
+                    case "JavaScript", "TypeScript" -> extractJavascriptImport(file, line, lineNumber, references);
+                    default -> { }
+                }
+            }
+            return references;
+        } catch (IOException exception) {
+            throw new IllegalStateException("import 관계를 분석하지 못했습니다.", exception);
+        }
+    }
+
+    private void extractJavaImport(ProjectFile file, String line, int lineNumber,
+                                   List<CodeReference> references) {
+        Matcher matcher = JAVA_IMPORT.matcher(line);
+        if (matcher.find()) addImport(file, matcher.group(1), lineNumber, references);
+    }
+
+    private void extractPythonImport(ProjectFile file, String line, int lineNumber,
+                                     List<CodeReference> references) {
+        Matcher from = PYTHON_FROM_IMPORT.matcher(line);
+        if (from.find()) {
+            String module = from.group(1);
+            for (String imported : from.group(2).split(",")) {
+                String name = imported.strip().split("\\s+as\\s+")[0].strip();
+                if (!name.isBlank() && !"*".equals(name)) {
+                    addImport(file, module + "." + name, lineNumber, references);
+                }
+            }
+            return;
+        }
+        Matcher direct = PYTHON_IMPORT.matcher(line);
+        if (direct.find()) addImport(file, direct.group(1), lineNumber, references);
+    }
+
+    private void extractJavascriptImport(ProjectFile file, String line, int lineNumber,
+                                         List<CodeReference> references) {
+        Matcher from = JS_IMPORT_FROM.matcher(line);
+        if (from.find()) {
+            addImport(file, from.group(1), lineNumber, references);
+            return;
+        }
+        Matcher direct = JS_DIRECT_IMPORT.matcher(line);
+        if (direct.find()) {
+            addImport(file, direct.group(1), lineNumber, references);
+            return;
+        }
+        Matcher require = JS_REQUIRE.matcher(line);
+        if (require.find()) addImport(file, require.group(1), lineNumber, references);
+    }
+
+    private void addImport(ProjectFile file, String target, int lineNumber,
+                           List<CodeReference> references) {
+        String normalized = target.strip();
+        if (!normalized.isBlank() && normalized.length() <= 500) {
+            references.add(new CodeReference(file, CodeReferenceType.IMPORT, normalized, lineNumber));
         }
     }
 

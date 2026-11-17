@@ -10,6 +10,7 @@ import com.localflow.domain.workspace.domain.FileCategory;
 import com.localflow.domain.workspace.domain.FileChangeType;
 import com.localflow.domain.workspace.domain.ProjectFileBackup;
 import com.localflow.domain.workspace.dto.CodeSymbolResponse;
+import com.localflow.domain.workspace.dto.CodeReferenceResponse;
 import com.localflow.domain.workspace.dto.FileContentResponse;
 import com.localflow.domain.workspace.dto.FileAnalysisResponse;
 import com.localflow.domain.workspace.dto.FileMoveRequest;
@@ -20,6 +21,7 @@ import com.localflow.domain.workspace.dto.FileWriteRequest;
 import com.localflow.domain.workspace.dto.ProjectFileResponse;
 import com.localflow.domain.workspace.entity.ProjectFile;
 import com.localflow.domain.workspace.repository.CodeSymbolRepository;
+import com.localflow.domain.workspace.repository.CodeReferenceRepository;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
 import com.localflow.global.error.CustomException;
 import com.localflow.global.error.ErrorCode;
@@ -61,6 +63,7 @@ public class ProjectFileService {
 
     private final ProjectFileRepository fileRepository;
     private final CodeSymbolRepository symbolRepository;
+    private final CodeReferenceRepository referenceRepository;
     private final ProjectSettingsRepository settingsRepository;
     private final ProjectService projectService;
     private final WorkspaceStorageService storageService;
@@ -69,6 +72,7 @@ public class ProjectFileService {
 
     public ProjectFileService(ProjectFileRepository fileRepository,
                               CodeSymbolRepository symbolRepository,
+                              CodeReferenceRepository referenceRepository,
                               ProjectSettingsRepository settingsRepository,
                               ProjectService projectService,
                               WorkspaceStorageService storageService,
@@ -76,6 +80,7 @@ public class ProjectFileService {
                               WorkspaceProperties properties) {
         this.fileRepository = fileRepository;
         this.symbolRepository = symbolRepository;
+        this.referenceRepository = referenceRepository;
         this.settingsRepository = settingsRepository;
         this.projectService = projectService;
         this.storageService = storageService;
@@ -156,6 +161,7 @@ public class ProjectFileService {
             for (ProjectFile stale : existing.values()) {
                 if (!acceptedPaths.contains(stale.getRelativePath())
                         && (!scopedSync || inScopes(stale.getRelativePath(), normalizedScopes))) {
+                    referenceRepository.deleteAllBySourceFile_Id(stale.getId());
                     symbolRepository.deleteAllByProjectFile_Id(stale.getId());
                     fileRepository.delete(stale);
                     storageService.delete(projectId, stale.getRelativePath());
@@ -184,7 +190,10 @@ public class ProjectFileService {
         List<CodeSymbolResponse> symbols = symbolRepository
                 .findAllByProjectFile_IdOrderByLineNumber(file.getId()).stream()
                 .map(CodeSymbolResponse::from).toList();
-        return new FileContentResponse(ProjectFileResponse.from(file), content, symbols);
+        List<CodeReferenceResponse> references = referenceRepository
+                .findAllBySourceFile_IdOrderByLineNumber(file.getId()).stream()
+                .map(CodeReferenceResponse::from).toList();
+        return new FileContentResponse(ProjectFileResponse.from(file), content, symbols, references);
     }
 
     public FileAnalysisResponse analysis(String projectId, String fileId) {
@@ -192,7 +201,10 @@ public class ProjectFileService {
         List<CodeSymbolResponse> symbols = symbolRepository
                 .findAllByProjectFile_IdOrderByLineNumber(file.getId()).stream()
                 .map(CodeSymbolResponse::from).toList();
-        return FileAnalysisResponse.from(file, symbols);
+        List<CodeReferenceResponse> references = referenceRepository
+                .findAllBySourceFile_IdOrderByLineNumber(file.getId()).stream()
+                .map(CodeReferenceResponse::from).toList();
+        return FileAnalysisResponse.from(file, symbols, references);
     }
 
     public Resource resource(String projectId, String fileId) {
@@ -271,6 +283,7 @@ public class ProjectFileService {
     public void delete(String projectId, String fileId, boolean approved) {
         ProjectFile file = requireFile(projectId, fileId);
         requirePermission(settings(projectId).getDeletePolicy(), approved);
+        referenceRepository.deleteAllBySourceFile_Id(fileId);
         symbolRepository.deleteAllByProjectFile_Id(fileId);
         fileRepository.delete(file);
         storageService.delete(projectId, file.getRelativePath());
@@ -302,6 +315,7 @@ public class ProjectFileService {
                     .findByProject_IdAndRelativePath(projectId, backup.relativePath())
                     .orElse(null);
             if (current != null) {
+                referenceRepository.deleteAllBySourceFile_Id(current.getId());
                 symbolRepository.deleteAllByProjectFile_Id(current.getId());
                 fileRepository.delete(current);
             }

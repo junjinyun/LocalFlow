@@ -102,6 +102,43 @@ class ProjectWorkspaceIntegrationTest {
     }
 
     @Test
+    void indexesImportsAndRemovesStaleReferenceAfterReindex() {
+        ProjectResponse project = projectService.create(new ProjectCreateRequest("imports", "test"));
+        MockMultipartFile controller = textFile("AuthController.java", """
+                package sample;
+                import sample.UserService;
+                class AuthController {}
+                """);
+        MockMultipartFile userService = textFile("UserService.java", """
+                package sample;
+                class UserService {}
+                """);
+        fileService.synchronize(project.id(), List.of(controller, userService),
+                List.of("imports/src/main/java/sample/AuthController.java",
+                        "imports/src/main/java/sample/UserService.java"), true, null);
+        String controllerId = fileService.findAll(project.id()).stream()
+                .filter(file -> file.fileName().equals("AuthController.java"))
+                .findFirst().orElseThrow().id();
+
+        FileContentResponse indexed = fileService.readContent(project.id(), controllerId);
+
+        assertThat(indexed.references()).hasSize(1);
+        assertThat(indexed.references().get(0).target()).isEqualTo("sample.UserService");
+        assertThat(indexed.references().get(0).lineNumber()).isEqualTo(2);
+        assertThat(fileService.analysis(project.id(), controllerId).references()).hasSize(1);
+
+        MockMultipartFile changedController = textFile("AuthController.java", """
+                package sample;
+                class AuthController {}
+                """);
+        fileService.synchronize(project.id(), List.of(changedController, userService),
+                List.of("imports/src/main/java/sample/AuthController.java",
+                        "imports/src/main/java/sample/UserService.java"), true, null);
+
+        assertThat(fileService.readContent(project.id(), controllerId).references()).isEmpty();
+    }
+
+    @Test
     void synchronizesOnlySelectedDirectoriesWithoutDeletingFilesOutsideScope() {
         ProjectResponse project = projectService.create(new ProjectCreateRequest("scoped", "test"));
         fileService.synchronize(project.id(),
