@@ -13,29 +13,27 @@ import com.localflow.global.error.ErrorCode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Service;
 
 @Service
 public class GitHubProjectImportService {
-    private static final Duration CLONE_TIMEOUT = Duration.ofMinutes(2);
-
     private final ProjectService projectService;
     private final ProjectFileService fileService;
     private final WorkspaceStorageService storageService;
     private final WorkspaceProperties properties;
+    private final GitRepositoryCloneClient cloneClient;
 
     public GitHubProjectImportService(ProjectService projectService, ProjectFileService fileService,
                                       WorkspaceStorageService storageService,
-                                      WorkspaceProperties properties) {
+                                      WorkspaceProperties properties,
+                                      GitRepositoryCloneClient cloneClient) {
         this.projectService = projectService;
         this.fileService = fileService;
         this.storageService = storageService;
         this.properties = properties;
+        this.cloneClient = cloneClient;
     }
 
     public GitHubProjectImportResponse importPublicRepository(GitHubProjectImportRequest request) {
@@ -45,7 +43,7 @@ public class GitHubProjectImportService {
                 request.name(), request.description()));
         Path sourceRoot = storageService.projectSourceRoot(project.id());
         try {
-            cloneRepository(reference, sourceRoot);
+            cloneClient.cloneShallow(reference, sourceRoot);
             enforcePhysicalLimits(sourceRoot);
             deleteDirectory(sourceRoot.resolve(".git"), sourceRoot);
             FileSyncResponse files = fileService.indexExistingTree(
@@ -55,35 +53,6 @@ public class GitHubProjectImportService {
         } catch (RuntimeException exception) {
             projectService.delete(project.id());
             throw exception;
-        }
-    }
-
-    private void cloneRepository(GitHubRepositoryReference reference, Path sourceRoot) {
-        try {
-            Files.createDirectories(sourceRoot.getParent());
-            List<String> command = new ArrayList<>(List.of(
-                    "git", "clone", "--depth", "1", "--single-branch"));
-            if (reference.branch() != null) {
-                command.add("--branch");
-                command.add(reference.branch());
-            }
-            command.add(reference.cloneUrl());
-            command.add(sourceRoot.toString());
-            Process process = new ProcessBuilder(command)
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
-                    .start();
-            boolean completed = process.waitFor(CLONE_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
-            if (!completed) {
-                process.destroyForcibly();
-                throw new CustomException(ErrorCode.GITHUB_IMPORT_FAILED);
-            }
-            if (process.exitValue() != 0) throw new CustomException(ErrorCode.GITHUB_IMPORT_FAILED);
-        } catch (IOException exception) {
-            throw new CustomException(ErrorCode.GITHUB_IMPORT_UNAVAILABLE);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new CustomException(ErrorCode.GITHUB_IMPORT_FAILED);
         }
     }
 
