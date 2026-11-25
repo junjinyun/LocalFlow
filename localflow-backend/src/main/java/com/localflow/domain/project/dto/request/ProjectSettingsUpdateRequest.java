@@ -16,6 +16,7 @@ public record ProjectSettingsUpdateRequest(
         @NotNull PermissionPolicy movePolicy,
         @NotNull PermissionPolicy deletePolicy,
         @NotNull PermissionPolicy executePolicy,
+        boolean autoValidationEnabled,
         @Size(max = 100) Set<@Size(max = 200) String> excludedPathPatterns,
         @Size(max = 50) Set<@Size(max = 20) String> excludedExtensions
 ) {

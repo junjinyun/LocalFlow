@@ -71,4 +71,22 @@ class AgentFileChangeTransactionServiceTest {
         verify(fileService, never()).backup(any(), any());
         verify(fileService, never()).write(any(), any(), any());
     }
+
+    @Test
+    void rollsBackAppliedFilesWhenPostApplyValidationFails() {
+        when(storageService.normalizeRelativePath("new.txt")).thenReturn("new.txt");
+        when(fileService.backup("project", "new.txt"))
+                .thenReturn(ProjectFileBackup.missing("new.txt"));
+        AgentPlan plan = new AgentPlan("create", "create", List.of(
+                new FileOperationPlan(FileOperationAction.CREATE, "new.txt", null, "value")));
+
+        assertThatThrownBy(() -> service.apply("project", plan, () -> { },
+                () -> { throw new IllegalStateException("test failed"); }))
+                .isInstanceOfSatisfying(AgentFileApplyException.class, exception -> {
+                    assertThat(exception.result().rollbackAttempted()).isTrue();
+                    assertThat(exception.result().rollbackSuccessful()).isTrue();
+                    assertThat(exception.result().errorMessage()).isEqualTo("test failed");
+                });
+        verify(fileService).restoreBackups(eq("project"), any());
+    }
 }

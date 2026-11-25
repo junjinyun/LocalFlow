@@ -44,6 +44,7 @@ import com.localflow.domain.workspace.domain.FileCategory;
 import com.localflow.domain.workspace.entity.ProjectFile;
 import com.localflow.domain.workspace.repository.ProjectFileRepository;
 import com.localflow.domain.workspace.service.WorkspaceStorageService;
+import com.localflow.domain.validation.service.AutomaticValidationGate;
 import com.localflow.global.error.CustomException;
 import com.localflow.global.error.ErrorCode;
 import java.util.EnumMap;
@@ -77,6 +78,7 @@ public class AgentExecutionService {
     private final ProjectSettingsRepository settingsRepository;
     private final ProjectFileRepository fileRepository;
     private final AgentFileChangeTransactionService fileChangeTransactionService;
+    private final AutomaticValidationGate automaticValidationGate;
     private final WorkspaceStorageService storageService;
     private final ChatMessageRepository chatRepository;
     private final AgentMemoryCandidatePublisher memoryCandidatePublisher;
@@ -102,6 +104,7 @@ public class AgentExecutionService {
                                  ProjectSettingsRepository settingsRepository,
                                  ProjectFileRepository fileRepository,
                                  AgentFileChangeTransactionService fileChangeTransactionService,
+                                 AutomaticValidationGate automaticValidationGate,
                                  WorkspaceStorageService storageService,
                                  ChatMessageRepository chatRepository,
                                  AgentMemoryCandidatePublisher memoryCandidatePublisher,
@@ -126,6 +129,7 @@ public class AgentExecutionService {
         this.settingsRepository = settingsRepository;
         this.fileRepository = fileRepository;
         this.fileChangeTransactionService = fileChangeTransactionService;
+        this.automaticValidationGate = automaticValidationGate;
         this.storageService = storageService;
         this.chatRepository = chatRepository;
         this.memoryCandidatePublisher = memoryCandidatePublisher;
@@ -142,6 +146,7 @@ public class AgentExecutionService {
         if (run.getStatus() != AgentRunStatus.PENDING) return;
         try {
             cancellationService.checkpoint(projectId, runId);
+            ProjectSettings settings = requireSettings(projectId);
             progressService.append(projectId, runId, AgentProgressStage.PREPARING,
                     "요청을 확인하고 실행 환경을 준비하는 중입니다.");
             if (approvalResume && run.getPlanJson() != null && run.getTaskExecutionsJson() == null) {
@@ -155,7 +160,8 @@ public class AgentExecutionService {
                 runRepository.saveAndFlush(run);
                 cancellationService.checkpoint(projectId, runId);
                 var applyResult = fileChangeTransactionService.apply(projectId, storedPlan,
-                        () -> cancellationService.checkpoint(projectId, runId));
+                        () -> cancellationService.checkpoint(projectId, runId),
+                        () -> automaticValidationGate.validate(projectId, runId, settings));
                 run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
                 cancellationService.checkpoint(projectId, runId);
                 run.complete(run.getDecisionJson(), run.getPlanJson(), storedPlan.response(),
@@ -167,7 +173,6 @@ public class AgentExecutionService {
                 return;
             }
 
-            ProjectSettings settings = requireSettings(projectId);
             List<ProjectFile> files = contextService.files(projectId);
             GenerationProvider provider = selectProvider(run.getPreferredGenerationProvider(), settings);
             String requestedModel = run.getPreferredModel() == null || run.getPreferredModel().isBlank()
@@ -319,7 +324,8 @@ public class AgentExecutionService {
             runRepository.saveAndFlush(run);
             cancellationService.checkpoint(projectId, runId);
             var applyResult = fileChangeTransactionService.apply(projectId, plan,
-                    () -> cancellationService.checkpoint(projectId, runId));
+                    () -> cancellationService.checkpoint(projectId, runId),
+                    () -> automaticValidationGate.validate(projectId, runId, settings));
             run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
             cancellationService.checkpoint(projectId, runId);
             run.complete(decisionJson, planJson, plan.response(), generation.model(),
@@ -471,7 +477,8 @@ public class AgentExecutionService {
             run.startRunning(snapshotJson(projectId, approvedPlan));
             runRepository.saveAndFlush(run);
             var applyResult = fileChangeTransactionService.apply(projectId, approvedPlan,
-                    () -> cancellationService.checkpoint(projectId, runId));
+                    () -> cancellationService.checkpoint(projectId, runId),
+                    () -> automaticValidationGate.validate(projectId, runId, settings));
             run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
             AgentTaskExecution waiting = executions.get(waitingIndex);
             executions.set(waitingIndex, waiting.withStatus(AgentTaskStatus.COMPLETED,
@@ -590,7 +597,8 @@ public class AgentExecutionService {
                     progressService.append(projectId, runId, AgentProgressStage.APPLYING,
                             "작업 " + (index + 1) + "/" + executions.size() + "의 파일 변경을 적용하는 중입니다.");
                     var applyResult = fileChangeTransactionService.apply(projectId, plan,
-                            () -> cancellationService.checkpoint(projectId, runId));
+                            () -> cancellationService.checkpoint(projectId, runId),
+                            () -> automaticValidationGate.validate(projectId, runId, settings));
                     run.recordApplicationResult(objectMapper.writeValueAsString(applyResult));
                 }
                 AgentTaskExecution completed = running.withStatus(AgentTaskStatus.COMPLETED,

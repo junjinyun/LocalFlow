@@ -41,6 +41,8 @@ public class ProjectSettings {
     @Enumerated(EnumType.STRING) private PermissionPolicy movePolicy;
     @Enumerated(EnumType.STRING) private PermissionPolicy deletePolicy;
     @Enumerated(EnumType.STRING) private PermissionPolicy executePolicy;
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean autoValidationEnabled;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "project_setting_excluded_paths", joinColumns = @JoinColumn(name = "setting_id"))
@@ -70,6 +72,7 @@ public class ProjectSettings {
         settings.movePolicy = PermissionPolicy.CONFIRM;
         settings.deletePolicy = PermissionPolicy.CONFIRM;
         settings.executePolicy = PermissionPolicy.DENY;
+        settings.autoValidationEnabled = false;
         settings.updatedAt = Instant.now();
         return settings;
     }
@@ -78,6 +81,7 @@ public class ProjectSettings {
                        PermissionPolicy readPolicy, PermissionPolicy createPolicy,
                        PermissionPolicy editPolicy, PermissionPolicy movePolicy,
                        PermissionPolicy deletePolicy, PermissionPolicy executePolicy,
+                       boolean autoValidationEnabled,
                        Set<String> excludedPathPatterns, Set<String> excludedExtensions) {
         this.executionMode = executionMode;
         this.privacyMode = privacyMode;
@@ -87,6 +91,7 @@ public class ProjectSettings {
         this.movePolicy = movePolicy;
         this.deletePolicy = deletePolicy;
         this.executePolicy = executePolicy;
+        this.autoValidationEnabled = autoValidationEnabled;
         this.excludedPathPatterns.clear();
         this.excludedPathPatterns.addAll(excludedPathPatterns);
         this.excludedExtensions.clear();
@@ -103,6 +108,7 @@ public class ProjectSettings {
     public PermissionPolicy getMovePolicy() { return movePolicy; }
     public PermissionPolicy getDeletePolicy() { return deletePolicy; }
     public PermissionPolicy getExecutePolicy() { return executePolicy; }
+    public boolean isAutoValidationEnabled() { return autoValidationEnabled; }
     public Set<String> getExcludedPathPatterns() { return Set.copyOf(excludedPathPatterns); }
     public Set<String> getExcludedExtensions() { return Set.copyOf(excludedExtensions); }
     public Instant getUpdatedAt() { return updatedAt; }

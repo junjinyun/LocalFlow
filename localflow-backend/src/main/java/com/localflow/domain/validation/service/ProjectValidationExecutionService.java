@@ -55,9 +55,18 @@ public class ProjectValidationExecutionService {
     }
 
     public ValidationCommandResult execute(String projectId, String runId, String commandId) {
+        return executeInternal(projectId, runId, commandId, true);
+    }
+
+    public ValidationCommandResult executeForGate(String projectId, String runId, String commandId) {
+        return executeInternal(projectId, runId, commandId, false);
+    }
+
+    private ValidationCommandResult executeInternal(String projectId, String runId, String commandId,
+                                                    boolean requireCompletedRun) {
         if (!properties.enabled()) throw new CustomException(ErrorCode.VALIDATION_EXECUTION_DISABLED);
         AgentRun run = runService.requireRun(projectId, runId);
-        if (run.getStatus() != AgentRunStatus.COMPLETED
+        if (requireCompletedRun && run.getStatus() != AgentRunStatus.COMPLETED
                 && run.getStatus() != AgentRunStatus.PARTIALLY_COMPLETED) {
             throw new CustomException(ErrorCode.INVALID_RUN_STATUS);
         }

@@ -24,6 +24,7 @@ export type ProjectSettings = {
   movePolicy: PermissionPolicy
   deletePolicy: PermissionPolicy
   executePolicy: PermissionPolicy
+  autoValidationEnabled: boolean
   excludedPathPatterns: string[]
   excludedExtensions: string[]
   updatedAt: string

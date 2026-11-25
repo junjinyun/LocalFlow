@@ -92,6 +92,7 @@ public class ProjectService {
         settings.update(request.executionMode(), request.privacyMode(), request.readPolicy(),
                 request.createPolicy(), request.editPolicy(), request.movePolicy(),
                 request.deletePolicy(), request.executePolicy(),
+                request.autoValidationEnabled(),
                 normalizeExcludedPaths(request.excludedPathPatterns()),
                 normalizeExcludedExtensions(request.excludedExtensions()));
         return ProjectSettingsResponse.from(settings);

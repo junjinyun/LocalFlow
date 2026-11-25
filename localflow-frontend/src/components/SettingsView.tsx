@@ -59,6 +59,7 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
           readPolicy: settings.readPolicy, createPolicy: settings.createPolicy,
           editPolicy: settings.editPolicy, movePolicy: settings.movePolicy,
           deletePolicy: settings.deletePolicy, executePolicy: settings.executePolicy,
+          autoValidationEnabled: settings.autoValidationEnabled,
           excludedPathPatterns: settings.excludedPathPatterns,
           excludedExtensions: settings.excludedExtensions,
         }),
@@ -100,7 +101,7 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
     { key: 'editPolicy', label: '파일 수정', detail: '기존 파일 내용 덮어쓰기' },
     { key: 'movePolicy', label: '이동·이름 변경', detail: '상대 경로와 파일명 변경' },
     { key: 'deletePolicy', label: '파일 삭제', detail: '업로드된 작업 사본에서 제거' },
-    { key: 'executePolicy', label: '코드 실행', detail: '명령 및 테스트 실행 · 현재 미지원' },
+    { key: 'executePolicy', label: '코드 실행', detail: '제한된 빌드·테스트 명령 실행' },
   ]
 
   const providerStatus = (provider: Provider) => {
@@ -125,6 +126,7 @@ export default function SettingsView({ project, providers, onProvidersRefreshed,
         <section className="settings-card panel"><div className="settings-title"><div className="settings-icon"><ShieldCheck size={19} /></div><div><h2>에이전트 권한</h2><p>향후 에이전트가 파일 작업을 요청할 때 적용됩니다.</p></div></div>
           <div className="mode-grid"><label>실행 모드<select value={settings.executionMode} onChange={event => updatePolicy('executionMode', event.target.value as ExecutionMode)}><option value="CONFIRM_EVERY_STEP">매 단계 확인</option><option value="BALANCED">균형 모드</option><option value="AUTONOMOUS">자율 실행</option></select></label><label>개인정보 모드<select value={settings.privacyMode} onChange={event => updatePolicy('privacyMode', event.target.value as PrivacyMode)}><option value="LOCAL_ONLY">로컬 전용</option><option value="EXTERNAL_ALLOWED">외부 AI 전송 허용</option></select></label></div>
           <div className="policy-list">{policies.map(item => <div className="policy-row" key={item.key}><div><strong>{item.label}</strong><p>{item.detail}</p></div><select value={settings[item.key] as string} onChange={event => updatePolicy(item.key, event.target.value as PermissionPolicy)}><option value="ALLOW">{policyLabels.ALLOW}</option><option value="CONFIRM">{policyLabels.CONFIRM}</option><option value="DENY">{policyLabels.DENY}</option></select></div>)}</div>
+          <div className="notification-setting"><div><strong>적용 전 자동 코드 검증</strong><p>AI 파일 변경 후 감지된 빌드·테스트를 실행하고, 실패하면 원본으로 복구합니다.</p></div><button className="secondary-button" type="button" onClick={() => setSettings({ ...settings, autoValidationEnabled: !settings.autoValidationEnabled })}>{settings.autoValidationEnabled ? '사용 중' : '사용 안 함'}</button></div>
         </section>
 
         <section className="settings-card panel"><div className="settings-title"><div className="settings-icon"><HardDrive size={19} /></div><div><h2>프로젝트 분석 제외 규칙</h2><p>기본 제외 폴더에 더해 동기화·색인에서 제외할 경로와 확장자를 지정합니다.</p></div></div>

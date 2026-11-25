@@ -35,6 +35,11 @@ public class AgentFileChangeTransactionService {
     }
 
     public AgentApplyResult apply(String projectId, AgentPlan plan, Runnable cancellationCheckpoint) {
+        return apply(projectId, plan, cancellationCheckpoint, () -> { });
+    }
+
+    public AgentApplyResult apply(String projectId, AgentPlan plan, Runnable cancellationCheckpoint,
+                                  Runnable postApplyValidation) {
         List<FileOperationPlan> operations = normalizeAndValidate(projectId, plan.operations());
         List<ProjectFileBackup> backups = captureBackups(projectId, operations);
         int applied = 0;
@@ -44,6 +49,8 @@ public class AgentFileChangeTransactionService {
                 applyOne(projectId, operation);
                 applied++;
             }
+            cancellationCheckpoint.run();
+            postApplyValidation.run();
             cancellationCheckpoint.run();
             return new AgentApplyResult(true, applied, false, true, List.of(), null);
         } catch (RuntimeException exception) {

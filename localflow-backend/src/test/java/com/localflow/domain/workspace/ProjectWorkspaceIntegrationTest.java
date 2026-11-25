@@ -129,6 +129,7 @@ class ProjectWorkspaceIntegrationTest {
                 ExecutionMode.BALANCED, PrivacyMode.LOCAL_ONLY,
                 PermissionPolicy.ALLOW, PermissionPolicy.CONFIRM, PermissionPolicy.CONFIRM,
                 PermissionPolicy.CONFIRM, PermissionPolicy.CONFIRM, PermissionPolicy.DENY,
+                false,
                 Set.of("generated/**"), Set.of(".log")));
 
         FileSyncResponse result = fileService.synchronize(project.id(),

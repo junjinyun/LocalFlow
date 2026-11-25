@@ -12,6 +12,7 @@ public record ProjectSettingsResponse(
         PermissionPolicy readPolicy, PermissionPolicy createPolicy,
         PermissionPolicy editPolicy, PermissionPolicy movePolicy,
         PermissionPolicy deletePolicy, PermissionPolicy executePolicy,
+        boolean autoValidationEnabled,
         Set<String> excludedPathPatterns, Set<String> excludedExtensions,
         Instant updatedAt
 ) {
@@ -20,6 +21,7 @@ public record ProjectSettingsResponse(
                 settings.getProjectId(), settings.getExecutionMode(), settings.getPrivacyMode(),
                 settings.getReadPolicy(), settings.getCreatePolicy(), settings.getEditPolicy(),
                 settings.getMovePolicy(), settings.getDeletePolicy(), settings.getExecutePolicy(),
+                settings.isAutoValidationEnabled(),
                 settings.getExcludedPathPatterns(), settings.getExcludedExtensions(),
                 settings.getUpdatedAt());
     }
