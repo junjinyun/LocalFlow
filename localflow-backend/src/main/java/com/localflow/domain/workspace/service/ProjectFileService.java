@@ -175,6 +175,45 @@ public class ProjectFileService {
                 .map(ProjectFileResponse::from).toList();
     }
 
+    @Transactional
+    public FileSyncResponse indexExistingTree(String projectId, String rootDirectoryName) {
+        Project project = projectService.requireProject(projectId);
+        ProjectSettings projectSettings = settings(projectId);
+        Path root = storageService.projectSourceRoot(projectId).toAbsolutePath().normalize();
+        List<Path> storedFiles;
+        try (var paths = Files.walk(root)) {
+            storedFiles = paths.filter(Files::isRegularFile).sorted().toList();
+        } catch (IOException exception) {
+            throw new IllegalStateException("가져온 프로젝트 파일을 조회하지 못했습니다.", exception);
+        }
+
+        List<FileSyncItemResponse> changes = new ArrayList<>();
+        long acceptedBytes = 0;
+        int acceptedCount = 0;
+        for (Path stored : storedFiles) {
+            String relativePath = root.relativize(stored).toString().replace('\\', '/');
+            String ignoreReason = ignoreReason(relativePath, projectSettings);
+            if (ignoreReason != null) {
+                changes.add(new FileSyncItemResponse(relativePath, FileChangeType.IGNORED, ignoreReason));
+                storageService.delete(projectId, relativePath);
+                continue;
+            }
+            long size = fileSize(stored);
+            acceptedBytes += size;
+            acceptedCount++;
+            if (size > properties.maxFileBytes() || acceptedBytes > properties.maxProjectBytes()
+                    || acceptedCount > properties.maxFiles()) {
+                throw new CustomException(ErrorCode.FILE_LIMIT_EXCEEDED);
+            }
+            ProjectFile saved = saveMetadata(project, null, relativePath, size, hash(stored));
+            sourceIndexService.reindex(saved, stored);
+            changes.add(new FileSyncItemResponse(relativePath, FileChangeType.ADDED, null));
+        }
+        project.attachDirectory(rootDirectoryName);
+        fileRepository.flush();
+        return summarize(projectId, changes, false, List.of());
+    }
+
     public FileContentResponse readContent(String projectId, String fileId) {
         ProjectFile file = requireFile(projectId, fileId);
         if (file.getCategory() == FileCategory.DOCUMENT) {

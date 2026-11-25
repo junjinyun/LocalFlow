@@ -2,9 +2,12 @@ package com.localflow.domain.project.controller;
 
 import com.localflow.global.common.ApiResponse;
 import com.localflow.domain.project.dto.request.ProjectCreateRequest;
+import com.localflow.domain.project.dto.request.GitHubProjectImportRequest;
 import com.localflow.domain.project.dto.request.ProjectSettingsUpdateRequest;
 import com.localflow.domain.project.dto.request.ProjectUpdateRequest;
 import com.localflow.domain.project.dto.response.ProjectResponse;
+import com.localflow.domain.project.dto.response.GitHubProjectImportResponse;
+import com.localflow.domain.project.service.GitHubProjectImportService;
 import com.localflow.domain.project.dto.response.ProjectSettingsResponse;
 import com.localflow.domain.project.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,9 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/projects")
 public class ProjectController {
     private final ProjectService projectService;
+    private final GitHubProjectImportService gitHubImportService;
 
-    public ProjectController(ProjectService projectService) {
+    public ProjectController(ProjectService projectService, GitHubProjectImportService gitHubImportService) {
         this.projectService = projectService;
+        this.gitHubImportService = gitHubImportService;
     }
 
     @Operation(summary = "프로젝트 생성")
@@ -37,6 +42,15 @@ public class ProjectController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ProjectResponse> create(@Valid @RequestBody ProjectCreateRequest request) {
         return ApiResponse.success(projectService.create(request), "프로젝트가 생성되었습니다.");
+    }
+
+    @Operation(summary = "공개 GitHub 저장소에서 프로젝트 생성")
+    @PostMapping("/imports/github")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<GitHubProjectImportResponse> importGitHub(
+            @Valid @RequestBody GitHubProjectImportRequest request) {
+        return ApiResponse.success(gitHubImportService.importPublicRepository(request),
+                "GitHub 저장소를 가져와 프로젝트를 생성했습니다.");
     }
 
     @Operation(summary = "프로젝트 목록 조회")

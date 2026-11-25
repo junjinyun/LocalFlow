@@ -13,6 +13,7 @@ import com.localflow.domain.workspace.dto.FileContentResponse;
 import com.localflow.domain.workspace.dto.FileSyncResponse;
 import com.localflow.domain.workspace.domain.FileAnalysisStatus;
 import com.localflow.domain.workspace.service.ProjectFileService;
+import com.localflow.domain.workspace.service.WorkspaceStorageService;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
@@ -27,6 +28,25 @@ import org.springframework.transaction.annotation.Transactional;
 class ProjectWorkspaceIntegrationTest {
     @Autowired private ProjectService projectService;
     @Autowired private ProjectFileService fileService;
+    @Autowired private WorkspaceStorageService storageService;
+
+    @Test
+    void indexesExistingGitHubTreeAndRemovesIgnoredFiles() {
+        ProjectResponse project = projectService.create(new ProjectCreateRequest("github-import", "test"));
+        storageService.writeText(project.id(), "src/Main.java", "public class Main {}");
+        storageService.writeText(project.id(), ".env", "SECRET=value");
+        storageService.writeText(project.id(), "node_modules/package.js", "ignored");
+
+        FileSyncResponse result = fileService.indexExistingTree(project.id(), "sample-repository");
+
+        assertThat(result.added()).isEqualTo(1);
+        assertThat(result.ignored()).isEqualTo(2);
+        assertThat(fileService.findAll(project.id())).extracting("relativePath")
+                .containsExactly("src/Main.java");
+        assertThat(storageService.projectSourceRoot(project.id()).resolve(".env")).doesNotExist();
+        assertThat(projectService.findById(project.id()).rootDirectoryName())
+                .isEqualTo("sample-repository");
+    }
 
     @Test
     void synchronizesDirectoryDetectsChangesAndIndexesSourceSymbols() {

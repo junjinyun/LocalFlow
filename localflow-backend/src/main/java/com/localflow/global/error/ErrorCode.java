@@ -32,6 +32,9 @@ public enum ErrorCode {
     VALIDATION_EXECUTION_DISABLED(HttpStatus.SERVICE_UNAVAILABLE,
             "프로젝트 빌드·테스트 검증 실행이 비활성화되어 있습니다."),
     INVALID_VALIDATION_COMMAND(HttpStatus.BAD_REQUEST, "현재 프로젝트에서 허용된 검증 명령이 아닙니다."),
+    INVALID_GITHUB_REPOSITORY(HttpStatus.BAD_REQUEST, "공개 GitHub 저장소 HTTPS 주소와 브랜치를 확인해 주세요."),
+    GITHUB_IMPORT_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "서버에서 Git을 실행할 수 없습니다."),
+    GITHUB_IMPORT_FAILED(HttpStatus.BAD_GATEWAY, "GitHub 저장소를 가져오지 못했습니다. 공개 여부와 브랜치를 확인해 주세요."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다.");
 

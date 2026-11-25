@@ -10,6 +10,13 @@ export type Project = {
   updatedAt: string
 }
 
+export type GitHubProjectImport = {
+  project: Project
+  files: FileSyncResult
+  repositoryUrl: string
+  branch: string | null
+}
+
 export type ExecutionMode = 'CONFIRM_EVERY_STEP' | 'BALANCED' | 'AUTONOMOUS'
 export type PermissionPolicy = 'ALLOW' | 'CONFIRM' | 'DENY'
 export type PrivacyMode = 'LOCAL_ONLY' | 'EXTERNAL_ALLOWED'

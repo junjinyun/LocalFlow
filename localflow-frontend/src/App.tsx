@@ -29,6 +29,8 @@ export default function App() {
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [repositoryUrl, setRepositoryUrl] = useState('')
+  const [repositoryBranch, setRepositoryBranch] = useState('')
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -73,13 +75,20 @@ export default function App() {
     if (!name.trim()) return
     setBusy(true)
     try {
-      const project = await api.projects.create(name.trim(), description.trim())
+      const imported = repositoryUrl.trim()
+        ? await api.projects.importGitHub(name.trim(), description.trim(), repositoryUrl.trim(), repositoryBranch.trim())
+        : null
+      const project = imported?.project ?? await api.projects.create(name.trim(), description.trim())
       await loadProjects(project.id)
       setCreateOpen(false)
       setName('')
       setDescription('')
+      setRepositoryUrl('')
+      setRepositoryBranch('')
       setTab('workspace')
-      notify('프로젝트를 만들었습니다.')
+      notify(imported
+        ? `GitHub 저장소에서 파일 ${imported.files.added}개를 가져왔습니다.`
+        : '프로젝트를 만들었습니다.')
     } catch (error) {
       notify(error instanceof Error ? error.message : '프로젝트 생성에 실패했습니다.', 'error')
     } finally {
@@ -155,6 +164,9 @@ export default function App() {
           <form className="form-stack" onSubmit={createProject}>
             <label>프로젝트 이름<input autoFocus maxLength={100} value={name} onChange={event => setName(event.target.value)} placeholder="예: student-api" /></label>
             <label>간단한 설명<textarea maxLength={500} value={description} onChange={event => setDescription(event.target.value)} placeholder="무엇을 만드는 프로젝트인가요?" /></label>
+            <label>공개 GitHub 저장소 주소 <small>선택</small><input type="url" maxLength={500} value={repositoryUrl} onChange={event => setRepositoryUrl(event.target.value)} placeholder="https://github.com/owner/repository" /></label>
+            {repositoryUrl.trim() && <label>브랜치 <small>선택 · 비워 두면 기본 브랜치</small><input maxLength={200} value={repositoryBranch} onChange={event => setRepositoryBranch(event.target.value)} placeholder="예: dev" /></label>}
+            {repositoryUrl.trim() && <p className="form-help">공개 저장소만 지원하며, 소스 사본을 가져온 뒤 기존 업로드와 동일하게 파일을 분석합니다.</p>}
             <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setCreateOpen(false)}>취소</button><button className="primary-button" disabled={busy || !name.trim()}>{busy ? '생성 중…' : '프로젝트 생성'}</button></div>
           </form>
         </Modal>

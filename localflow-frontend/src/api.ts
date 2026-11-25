@@ -1,6 +1,6 @@
 import type {
   AgentRun, AgentRunProgress, AgentRunSummary, ApiResponse, ChatMessage, ExecutionMode, FileAnalysis, FileContent, FileSyncResult,
-  MemoryCandidate, MemoryCandidateExtractionHistory, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, ProjectValidationPreview,
+  GitHubProjectImport, MemoryCandidate, MemoryCandidateExtractionHistory, MemoryType, Project, ProjectFile, ProjectMemory, ProjectSettings, ProjectValidationPreview,
   Provider, ProviderType, ValidationCommandResult,
 } from './types'
 
@@ -42,6 +42,12 @@ export const api = {
     create: (name: string, description: string) => request<Project>('/api/projects', {
       method: 'POST', body: JSON.stringify({ name, description: description || null }),
     }),
+    importGitHub: (name: string, description: string, repositoryUrl: string, branch: string) =>
+      request<GitHubProjectImport>('/api/projects/imports/github', {
+        method: 'POST', body: JSON.stringify({
+          name, description: description || null, repositoryUrl, branch: branch || null,
+        }),
+      }),
     update: (id: string, name: string, description: string) => request<Project>(`/api/projects/${id}`, {
       method: 'PUT', body: JSON.stringify({ name, description: description || null }),
     }),
