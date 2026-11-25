@@ -77,6 +77,14 @@ public class JevDecisionProvider implements DecisionProvider {
                             tags);
                 }
             }
+            if (targets.size() > 1) {
+                for (int slot = 0; slot < 3; slot++) {
+                    choiceQuestion(questions, taskTargetQuestion(taskIndex, slot),
+                            "For task '" + request.taskUnits().get(taskIndex)
+                                    + "', choose a project file that should be inspected or changed, or none. "
+                                    + "Prefer a different file in each slot.", targets);
+                }
+            }
         }
 
         JsonNode response = httpClient.post(providerType(), endpoint(), body,
@@ -113,8 +121,20 @@ public class JevDecisionProvider implements DecisionProvider {
                 String tag = tags.get(tagKey);
                 if (tag != null && !"none".equals(tagKey)) taskTags.add(tag);
             }
+            Set<String> taskPaths = new LinkedHashSet<>();
+            for (int slot = 0; slot < 3; slot++) {
+                String targetKeyForTask = answerChoice(
+                        answers.path(taskTargetQuestion(taskIndex, slot)), "none");
+                if (!targets.containsKey(targetKeyForTask)) {
+                    throw ProviderCallException.invalidResponse(providerType(),
+                            "JEV가 후보에 없는 작업 대상 파일을 반환했습니다.");
+                }
+                String path = targets.get(targetKeyForTask);
+                if (path != null && !"none".equals(targetKeyForTask)) taskPaths.add(path);
+            }
             selectedTags.addAll(taskTags);
-            taskScopes.add(new TaskScope(request.taskUnits().get(taskIndex), List.copyOf(taskTags)));
+            taskScopes.add(new TaskScope(request.taskUnits().get(taskIndex),
+                    List.copyOf(taskTags), List.copyOf(taskPaths)));
         }
         return new DecisionResult(action, targetPath, List.copyOf(selectedTags), taskScopes,
                 risk, needsApproval,
@@ -147,6 +167,10 @@ public class JevDecisionProvider implements DecisionProvider {
 
     private String taskValidQuestion(int taskIndex) {
         return "task_" + taskIndex + "_valid";
+    }
+
+    private String taskTargetQuestion(int taskIndex, int slot) {
+        return "task_" + taskIndex + "_target_" + slot;
     }
 
     private void choiceQuestion(ObjectNode questions, String id, String instructions,

@@ -179,10 +179,10 @@ public class AgentContextService {
                             List<TaskScope> scopes, List<String> symbols) {
         boolean dependencyRequested = dependencyRequested(prompt);
         ScoreDetail best = score(file, tokens(prompt), decision.targetPath(), decision.selectedTags(),
-                dependencyRequested, symbols);
+                List.of(), dependencyRequested, symbols);
         for (TaskScope scope : scopes) {
             ScoreDetail candidate = score(file, tokens(scope.instruction()), decision.targetPath(), scope.tags(),
-                    dependencyRequested || dependencyRequested(scope.instruction()), symbols);
+                    scope.targetPaths(), dependencyRequested || dependencyRequested(scope.instruction()), symbols);
             if (candidate.score() > best.score()) best = candidate;
         }
         List<String> reasons = best.reasons().isEmpty()
@@ -192,7 +192,8 @@ public class AgentContextService {
     }
 
     private ScoreDetail score(ProjectFile file, Set<String> terms, String targetPath,
-                              List<String> selectedTags, boolean dependencyRequested,
+                              List<String> selectedTags, List<String> scopeTargetPaths,
+                              boolean dependencyRequested,
                               List<String> symbols) {
         String path = file.getRelativePath().toLowerCase(Locale.ROOT);
         int score = 0;
@@ -200,6 +201,10 @@ public class AgentContextService {
         if (file.getRelativePath().equals(targetPath)) {
             score += 10_000;
             reasons.add("AI가 지정한 대상 파일과 일치");
+        }
+        if (scopeTargetPaths.contains(file.getRelativePath())) {
+            score += 5_000;
+            reasons.add("JEV가 작업 단위의 대상 파일로 선택");
         }
         List<String> matchedTags = selectedTags.stream().filter(file.getTags()::contains).sorted().toList();
         if (!matchedTags.isEmpty()) {
@@ -257,7 +262,8 @@ public class AgentContextService {
         List<String> lines = new ArrayList<>();
         for (int index = 0; index < scopes.size(); index++) {
             TaskScope scope = scopes.get(index);
-            lines.add((index + 1) + ". " + scope.instruction() + " tags=" + scope.tags());
+            lines.add((index + 1) + ". " + scope.instruction() + " tags=" + scope.tags()
+                    + " files=" + scope.targetPaths());
         }
         return String.join("\n", lines);
     }

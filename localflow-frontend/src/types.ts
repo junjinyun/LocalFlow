@@ -199,7 +199,7 @@ export type AgentDecision = {
   actionType: string
   targetPath: string | null
   selectedTags?: string[]
-  taskScopes?: Array<{ instruction: string; tags: string[] }>
+  taskScopes?: Array<{ instruction: string; tags: string[]; targetPaths?: string[] }>
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
   needsHumanApproval: boolean
   model: string

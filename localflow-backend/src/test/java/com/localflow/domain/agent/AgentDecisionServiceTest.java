@@ -105,6 +105,23 @@ class AgentDecisionServiceTest {
         assertThat(design.actionType()).isEqualTo("INSPECT_FILES");
     }
 
+    @Test
+    void mergesValidatedJevTargetPathsIntoMatchingTaskScope() {
+        DecisionProvider provider = providerReturning(new DecisionResult(
+                "MODIFY_FILES", null, List.of("authentication"),
+                List.of(new TaskScope("인증 수정", List.of("authentication"),
+                        List.of("src/Auth.java"))),
+                "MEDIUM", true, "jev", "{}"));
+        AgentDecisionService service = new AgentDecisionService(List.of(provider), decomposer, retryExecutor);
+
+        DecisionResult result = service.decide("인증 수정",
+                List.of(file("src/Auth.java", "authentication")), true, decomposition());
+
+        assertThat(result.fallbackUsed()).isFalse();
+        assertThat(result.taskScopes()).singleElement()
+                .satisfies(scope -> assertThat(scope.targetPaths()).containsExactly("src/Auth.java"));
+    }
+
     private DecisionProvider providerReturning(DecisionResult result) {
         DecisionProvider provider = mock(DecisionProvider.class);
         when(provider.providerType()).thenReturn(AiProviderType.JEV);

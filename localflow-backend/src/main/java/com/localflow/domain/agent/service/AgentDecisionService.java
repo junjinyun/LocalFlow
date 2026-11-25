@@ -47,7 +47,7 @@ public class AgentDecisionService {
         List<TaskScope> proposedScopes = decomposition.tasks().stream().map(task -> {
             Set<String> tags = new LinkedHashSet<>(task.suggestedTags());
             tags.addAll(decomposer.tagsFor(task.instruction(), candidateTags));
-            return new TaskScope(task.instruction(), List.copyOf(tags));
+            return new TaskScope(task.instruction(), List.copyOf(tags), List.of());
         }).toList();
         if (externalAllowed) {
             DecisionProvider jev = providers.stream()
@@ -131,9 +131,11 @@ public class AgentDecisionService {
         Set<String> instructions = proposedScopes.stream().map(TaskScope::instruction)
                 .collect(java.util.stream.Collectors.toSet());
         for (TaskScope scope : result.taskScopes()) {
-            if (!instructions.contains(scope.instruction()) || !tags.containsAll(scope.tags())) {
+            if (!instructions.contains(scope.instruction()) || !tags.containsAll(scope.tags())
+                    || !files.containsAll(scope.targetPaths())) {
                 throw ProviderCallException.invalidResponse(
-                        AiProviderType.JEV, "JEV가 요청에 없는 작업 단위 또는 파일 태그를 반환했습니다.");
+                        AiProviderType.JEV,
+                        "JEV가 요청에 없는 작업 단위, 파일 태그 또는 대상 경로를 반환했습니다.");
             }
         }
     }
@@ -175,7 +177,9 @@ public class AgentDecisionService {
             if (hasJevScopes && decided == null) continue;
             Set<String> tags = new LinkedHashSet<>(local.tags());
             if (decided != null) tags.addAll(decided.tags());
-            merged.add(new TaskScope(local.instruction(), List.copyOf(tags)));
+            Set<String> targetPaths = new LinkedHashSet<>(local.targetPaths());
+            if (decided != null) targetPaths.addAll(decided.targetPaths());
+            merged.add(new TaskScope(local.instruction(), List.copyOf(tags), List.copyOf(targetPaths)));
         }
         if (merged.isEmpty()) merged.addAll(localScopes);
         List<String> selected = merged.stream().flatMap(scope -> scope.tags().stream()).distinct().toList();

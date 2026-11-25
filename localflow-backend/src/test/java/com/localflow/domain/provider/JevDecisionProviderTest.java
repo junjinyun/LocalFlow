@@ -33,7 +33,10 @@ class JevDecisionProviderTest {
                       "needs_human":{"type":"noul","noul":0.91},
                       "task_0_valid":{"type":"noul","noul":0.96},
                       "task_0_tag_0":{"type":"choice","choice":"t0"},
-                      "task_0_tag_1":{"type":"choice","choice":"t1"}
+                      "task_0_tag_1":{"type":"choice","choice":"t1"},
+                      "task_0_target_0":{"type":"choice","choice":"f0"},
+                      "task_0_target_1":{"type":"choice","choice":"none"},
+                      "task_0_target_2":{"type":"choice","choice":"none"}
                     }}
                     """.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -67,6 +70,7 @@ class JevDecisionProviderTest {
             assertThat(result.needsHumanApproval()).isTrue();
             assertThat(result.taskScopes()).hasSize(1);
             assertThat(result.taskScopes().get(0).tags()).containsExactly("authentication", "login");
+            assertThat(result.taskScopes().get(0).targetPaths()).containsExactly("src/Auth.java");
         } finally {
             server.stop(0);
         }
